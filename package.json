@@ -1,0 +1,38 @@
+{
+    "name": "@realdem/react-log-driver",
+    "version": "2023.1.1.0",
+    "private": false,
+    "license": "MIT",
+    "description": "A react hook to log data from any component and upload periodically to your server",
+    "keywords": [
+        "user events",
+        "event log",
+        "events",
+        "logger",
+        "tools"
+    ],
+    "homepage": "https://www.github.com/realdem/react-log-driver",
+    "author": {
+        "name": "Dan Michael",
+        "email": "dan@danmichael.consulting",
+        "url": "https://danmichael.pro"
+    },
+    "main": "react-log-driver.js",
+    "dependencies": {
+        "react": "^18.2.0",
+        "react-query": "^3.39.2",
+        "recoil": "^0.7.6"
+    },
+    "browserslist": {
+        "production": [
+            ">0.2%",
+            "not dead",
+            "not op_mini all"
+        ],
+        "development": [
+            "last 3 chrome version",
+            "last 3 firefox version",
+            "last 3 safari version"
+        ]
+    }
+}

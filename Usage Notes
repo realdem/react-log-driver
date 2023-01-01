@@ -1,0 +1,7 @@
+Usage Notes
+
+Time is recorded in Unix time
+
+Log keys that you provide are treated as strings as best as possible.
+
+Max key length is 1024
