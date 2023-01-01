@@ -1,6 +1,6 @@
 /**
  * "react-log-driver"
- * Version: 0.5.01
+ * Version: 0.5.02
  * License: MIT
  * Author: Dan Michael <dan@danmichael.pro>, November 2022
  * 
