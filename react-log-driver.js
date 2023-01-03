@@ -2,7 +2,7 @@
  * "react-log-driver"
  * Version: 0.5.03
  * License: MIT
- * Author: Dan Michael <dan@danmichael.consulting>, November 2022
+ * Author: Dan Michael <dan@danmichael.consulting>, started mid 2022
  * 
  * Requirements: For ReactJS running in web browsers, with 2 installed dependencies.
  * 
