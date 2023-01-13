@@ -54,6 +54,9 @@ const packageName = 'react-log-driver'
 //
 
 
+const debug = true
+
+
 
 /**Configure defaults (3) */
 //
@@ -302,6 +305,7 @@ export function useLogDriver(...args) {
     let driveTheseKeys = args[0] === undefined? []
         : args.find(arg => typeof arg === 'array' && Boolean(arg.filter(a => typeof a === 'string' && a.length > 0).length > 0))
         .filter(key => typeof key === 'string' && key.length > 0)
+    if (debug) console.info('driveTheseKeys', driveTheseKeys)
 
     /**Control all collected events over all keys */
     let clear = () => {
