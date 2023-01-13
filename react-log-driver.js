@@ -110,7 +110,7 @@ const addTimeToEvent = event => ({
 const generateEventLogAtomKey = (key = defaultKey, logNormal = true) => `${packageName}:${key}:${logNormal? 'normal' : 'temp'}`
 
 
-/**The recoil (5) */
+/**The recoil (7) */
 //
 /**Instances of log batch senders which look over multiple Log key's */
 const logDriversState = atom({
@@ -120,7 +120,13 @@ const logDriversState = atom({
 //
 /**Store all keys here */
 const eventLogsState = atom({
-    key: packageName+'eventLogs',
+    key: packageName+':eventLogs',
+    default: []
+})
+//
+/**Keys of event logs not to send */
+const eventLogsPausedState = atom({
+    key: packageName+':eventLogsPaused',
     default: []
 })
 //
@@ -148,6 +154,18 @@ const eventLogDriverSelector = selector({
     key: packageName+':eventLogDriverSelector',
     get: ({get}) => get(),
     set: ({get, set}, keys = []) => {}
+})
+//
+/**Clear event logs */
+const eventLogClearerSelector = selector({
+    key: packageName+':eventLogClearerSelector',
+    get: ({get}) => get(),
+    set: ({get, set}, key = undefined) => {},
+    reset: ({set}, key) => {
+        /**Clear both normal & temp events from this log */
+        set(eventLogPendingSendState(generateEventLogAtomKey(key, true)), [])
+        set(eventLogPendingSendState(generateEventLogAtomKey(key, false)), [])
+    }
 })
 
 
@@ -283,6 +301,9 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
 //
 /**A simplified instance (not main instance) which only logs from app components, without subscribing to the log state. */
 export const useLogger = (key = undefined) => useLoggerSender(key)
+
+
+/* The functions (1) */
 //
 /**Log an event with any logKey. It performs heavier than useLogger does. */
 export function log(...args) {
@@ -298,18 +319,40 @@ export function log(...args) {
 //
 export function useLogDriver(...args) {
     const logDrive = useSetRecoilState(eventLogDriverSelector)
+    //
+    const [eventLogsPaused, setEventLogsPaused] = useRecoilState(eventLogsPausedState)
+    const resetEventLogsPaused = useResetRecoilState(eventLogsPausedState)
+    //
+    const eventLogClearerReset = useResetRecoilState(eventLogClearerSelector)
+    //
+    /**All keys in the system */
     const [logKeys, setLogKeys] = useRecoilState(eventLogsState)
+    if (debug) console.info('logKeys', logKeys)
+    //
     let keys = logKeys//logs.map(({key}) => key)
+    //
     const [allLogDriverKeys, setAllLogDriverKeys]  = useRecoilState(logDriversState)
+    if (debug) console.info('allLogDriverKeys', allLogDriverKeys)
     
-    let driveTheseKeys = args[0] === undefined? []
+    let driveTheseKeys = args[0] === undefined? (logKeys.length > 0? logKeys : [defaultKey])
+        : typeof args[0] === 'string'? [args[0]]
+        : Array.isArray(args[0])? [args[0]]
         : args.find(arg => typeof arg === 'array' && Boolean(arg.filter(a => typeof a === 'string' && a.length > 0).length > 0))
-        .filter(key => typeof key === 'string' && key.length > 0)
+            .filter(key => typeof key === 'string' && key.length > 0)
     if (debug) console.info('driveTheseKeys', driveTheseKeys)
 
+    /**Add any missing keys to all keys */
+    let missingLogDriverKeys = driveTheseKeys.reduce((missing, key) => allLogDriverKeys.includes(key)? missing : [...missing, key], [])
+    useEffect(() => {
+        if (missingLogDriverKeys.length > 0) setAllLogDriverKeys(allLogDriverKeys => [...allLogDriverKeys, ...missingLogDriverKeys])
+    }, [missingLogDriverKeys.join(',')])
+
     /**Control all collected events over all keys */
-    let clear = () => {
+    let clear = (clearTheseLogs = []) => {
         /**Delete all event logs for all keys */
+        if (clearTheseLogs.length > 0) clearTheseLogs.forEach(eventLogClearerReset)
+        /**Else only clear */
+        else driveTheseKeys.forEach(eventLogClearerReset)
     }
 
     /**Dam the river.
@@ -333,8 +376,11 @@ export function useLogDriver(...args) {
     
     /**Tell the driver the log uploading or logging can continue
      */
-    let drive = () => {
-        /**Un-pause all event log keys */
+    let drive = (unpauseTheseKeys = []) => {
+        /**If none provided, un-pause all event log keys */
+        if (unpauseTheseKeys.length === 0) resetEventLogsPaused()
+        /**Else remove only the specified keys from beign paused */
+        else setEventLogsPaused(eventLogsPaused.reduce((all, pausedLog) => unpauseTheseKeys.includes(pausedLog)? all : [...all, pausedLog], []))
     }
 
     
