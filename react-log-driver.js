@@ -81,8 +81,8 @@ function sanitizeRawKey(key) {
         case 'bigint':
         case 'boolean':
             return `${key}`.slice(0, maxKeyLength) || defaultKey
-        case 'array':
-            return key.join(',').slice(0, maxKeyLength) || defaultKey
+        case 'object':
+            return Array.isArray(key)? key.map(sanitizeRawEvent).join(',').slice(0, maxKeyLength) : defaultKey
         default:
             return defaultKey
     }
@@ -153,18 +153,21 @@ const eventLogPendingSendSelector = selectorFamily({
 const eventLogDriverSelector = selector({
     key: packageName+':eventLogDriverSelector',
     get: ({get}) => get(),
-    set: ({get, set}, keys = []) => {}
+    set: ({get, set}, type, keys = [], action) => {
+        if (debug) console.info('eventLogDriverSelector.set()', type, keys, action)
+    }
 })
 //
 /**Clear event logs */
 const eventLogClearerSelector = selector({
     key: packageName+':eventLogClearerSelector',
     get: ({get}) => get(),
-    set: ({get, set}, key = undefined) => {},
-    reset: ({set}, key) => {
-        /**Clear both normal & temp events from this log */
-        set(eventLogPendingSendState(generateEventLogAtomKey(key, true)), [])
-        set(eventLogPendingSendState(generateEventLogAtomKey(key, false)), [])
+    reset: ({set}, key = undefined) => {
+        if (typeof key === 'string' && key.length > 0) {
+            /**Clear both normal & temp events from this log */
+            set(eventLogPendingSendState(generateEventLogAtomKey(key, true)), [])
+            set(eventLogPendingSendState(generateEventLogAtomKey(key, false)), [])
+        }
     }
 })
 
@@ -333,15 +336,22 @@ export function useLogDriver(...args) {
     //
     const [allLogDriverKeys, setAllLogDriverKeys]  = useRecoilState(logDriversState)
     if (debug) console.info('allLogDriverKeys', allLogDriverKeys)
-    
+    //
+
     let driveTheseKeys = args[0] === undefined? (logKeys.length > 0? logKeys : [defaultKey])
         : typeof args[0] === 'string'? [args[0]]
         : Array.isArray(args[0])? [args[0]]
         : args.find(arg => typeof arg === 'array' && Boolean(arg.filter(a => typeof a === 'string' && a.length > 0).length > 0))
             .filter(key => typeof key === 'string' && key.length > 0)
     if (debug) console.info('driveTheseKeys', driveTheseKeys)
-
+    
     /**Add any missing keys to all keys */
+    let missingLogKeys = driveTheseKeys.reduce((missing, key) => logKeys.includes(key)? missing : [...missing, key], [])
+    useEffect(() => {
+        if (missingLogKeys.length > 0) setLogKeys(allLogKeys => [...allLogKeys, ...missingLogKeys])
+    }, [missingLogKeys.join(',')])
+
+    /**Add any missing keys to all log-driver keys */
     let missingLogDriverKeys = driveTheseKeys.reduce((missing, key) => allLogDriverKeys.includes(key)? missing : [...missing, key], [])
     useEffect(() => {
         if (missingLogDriverKeys.length > 0) setAllLogDriverKeys(allLogDriverKeys => [...allLogDriverKeys, ...missingLogDriverKeys])
@@ -359,13 +369,14 @@ export function useLogDriver(...args) {
      * This is useful if the App wants to temporarily cut off adding more into memory or onto its network requests.
      * You can even deactivate log sending for log-keys that you haven't specified the driver to look after.
      */
-    let jam = (deactivate = [], prevent = ['logging', 'sending']) => logDrive(
+    let jam = (deactivate = allLogDriverKeys, prevent = ['logging', 'sending']) => logDrive(
         'jam', 
         typeof deactivate === 'boolean'? !deactivate? [] : keys
-            : typeof deactivate === 'array'? deactivate.map(sanitizeRawKey) 
+            : Array.isArray(deactivate)? deactivate.map(sanitizeRawKey) 
             : [sanitizeRawKey(deactivate)],
         prevent
     )
+    if (debug) console.info('eventLogsPaused', eventLogsPaused)
     
     /**If the user "logs out" and all events should be deactivated and cleared*/
     let logout = () => {
@@ -377,6 +388,12 @@ export function useLogDriver(...args) {
     /**Tell the driver the log uploading or logging can continue
      */
     let drive = (unpauseTheseKeys = []) => {
+        /**First, clean up the parameter */
+        unpauseTheseKeys = sanitizeRawKey(unpauseTheseKeys)
+        //
+        // if (['string', 'number', 'bigint'].includes(typeof unpauseTheseKeys) && unpauseTheseKeys.length > 0) unpauseTheseKeys = [`${unpauseTheseKeys}`]
+        // else if (!Array.isArray(unpauseTheseKeys)) unpauseTheseKeys = []
+        //
         /**If none provided, un-pause all event log keys */
         if (unpauseTheseKeys.length === 0) resetEventLogsPaused()
         /**Else remove only the specified keys from beign paused */
@@ -390,6 +407,7 @@ export function useLogDriver(...args) {
         jam,
         drive,
         clear,
-        logout
+        logout//,
+        // reset
     }
 }
