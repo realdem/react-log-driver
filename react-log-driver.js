@@ -153,8 +153,17 @@ const eventLogPendingSendSelector = selectorFamily({
 const eventLogDriverSelector = selector({
     key: packageName+':eventLogDriverSelector',
     get: ({get}) => get(),
-    set: ({get, set}, type, keys = [], action) => {
-        if (debug) console.info('eventLogDriverSelector.set()', type, keys, action)
+    set: ({get, set}, param) => {
+        // type, keys = [], action
+        if (debug) console.info('eventLogDriverSelector.set()', param)
+        //
+        switch (param.type) {
+            case 'jam':
+                set(eventLogsPausedState, [...new Set([...get(eventLogsPausedState), ...param.keys])])
+                /**DEV_REMINDER need to "prevent" whatever is provided as the param.action, if 'logging' and/or 'sending' is provided */
+                break;
+            default: break;
+        }
     }
 })
 //
@@ -325,6 +334,7 @@ export function useLogDriver(...args) {
     //
     const [eventLogsPaused, setEventLogsPaused] = useRecoilState(eventLogsPausedState)
     const resetEventLogsPaused = useResetRecoilState(eventLogsPausedState)
+    if (debug) console.info('eventLogsPaused', eventLogsPaused)
     //
     const eventLogClearerReset = useResetRecoilState(eventLogClearerSelector)
     //
@@ -369,14 +379,13 @@ export function useLogDriver(...args) {
      * This is useful if the App wants to temporarily cut off adding more into memory or onto its network requests.
      * You can even deactivate log sending for log-keys that you haven't specified the driver to look after.
      */
-    let jam = (deactivate = allLogDriverKeys, prevent = ['logging', 'sending']) => logDrive(
-        'jam', 
-        typeof deactivate === 'boolean'? !deactivate? [] : keys
+    let jam = (deactivate = allLogDriverKeys, prevent = ['logging', 'sending']) => logDrive({
+        type: 'jam', 
+        keys: typeof deactivate === 'boolean'? !deactivate? [] : allLogDriverKeys
             : Array.isArray(deactivate)? deactivate.map(sanitizeRawKey) 
             : [sanitizeRawKey(deactivate)],
         prevent
-    )
-    if (debug) console.info('eventLogsPaused', eventLogsPaused)
+    })
     
     /**If the user "logs out" and all events should be deactivated and cleared*/
     let logout = () => {
