@@ -331,15 +331,44 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
     /**For an external link that breaks the webapp;
      * Send all logs that can be sent, before the webapp unloads
      */
+    const sendAllLogsThenNavigateToALinkDefaultParam = {
+        id: '', //DEV_REMINDER something very random
+        title: '',
+        className: '',
+        href: '#',
+        rel: 'noreferrer',
+        target: '',
+        text: null
+    }
+    //
     let navigateTo = href => {
         let runFunc = new Promise(resolve => {
             // DEV_REMINDER
+            console.error('Function not complete yet // 2023-01-14')
+
             // each log, send out all normal & temp logs
             // when finished, send to param
 
             resolve()
         })
-        return runFunc.then(() => window.location.href = href)
+        return runFunc.then(() => window.location.href = `${href}` || sendAllLogsThenNavigateToALinkDefaultParam.href)
+    }
+    /**Produce an <a> link that navigates after sending */
+    let sendAllLogsThenNavigateToALink = ({href, rel, target, title, id, className, text, children}) => {
+        href = href || sendAllLogsThenNavigateToALinkDefaultParam.href
+        rel = rel || sendAllLogsThenNavigateToALinkDefaultParam.rel
+        target = target || sendAllLogsThenNavigateToALinkDefaultParam.target
+        title = title || sendAllLogsThenNavigateToALinkDefaultParam.title
+        id = id || sendAllLogsThenNavigateToALinkDefaultParam.id
+        className = className || sendAllLogsThenNavigateToALinkDefaultParam.className
+        text = text || sendAllLogsThenNavigateToALinkDefaultParam.text
+        //
+        let onClick = e => {
+            e.preventDefault()
+            navigateTo(href)
+        }
+        //
+        return <a {...{href, rel, target, title, id, className, onClick}}>{children || text || href}</a>
     }
 
     /**Return methods for the user to control some aspects */
@@ -348,6 +377,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         check,
         send,
         navigateTo,
+        sendAllLogsThenNavigateToALink,
         clear,
         events,
         errors
