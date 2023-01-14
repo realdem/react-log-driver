@@ -333,6 +333,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
      */
     let navigateTo = href => {
         let runFunc = new Promise(resolve => {
+            // DEV_REMINDER
             // each log, send out all normal & temp logs
             // when finished, send to param
 
