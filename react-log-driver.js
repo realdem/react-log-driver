@@ -108,6 +108,15 @@ const addTimeToEvent = event => ({
 //
 /**For partitioning event logs logically */
 const generateEventLogAtomKey = (key = defaultKey, logNormal = true) => `${packageName}:${key}:${logNormal? 'normal' : 'temp'}`
+//
+/**Defaults for an event log object */
+const newLogDefaults = {
+    key: defaultKey,
+    pauseLogging: false,
+    pauseSending: false
+}
+/**Create a log object */
+const newLog = (param = {}) => ({...newLogDefaults, ...param})
 
 
 /**The recoil (7) */
@@ -123,6 +132,7 @@ const eventLogsState = atom({
     key: packageName+':eventLogs',
     default: []
 })
+// {key: 'default', pauseLogging: false, pauseSending: false}
 //
 /**Keys of event logs not to send */
 const eventLogsPausedState = atom({
@@ -382,7 +392,7 @@ export function useLogDriver(...args) {
     let jam = (deactivate = allLogDriverKeys, prevent = ['logging', 'sending']) => logDrive({
         type: 'jam', 
         keys: typeof deactivate === 'boolean'? !deactivate? [] : allLogDriverKeys
-            : Array.isArray(deactivate)? deactivate.map(sanitizeRawKey) 
+            : Array.isArray(deactivate)? deactivate.map(sanitizeRawKey).reduce((existingKeys, thisKey) => logKeys.includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
             : [sanitizeRawKey(deactivate)],
         prevent
     })
