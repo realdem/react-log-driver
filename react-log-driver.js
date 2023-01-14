@@ -37,6 +37,7 @@
  *      and they can send() if a sendFn is provided
  * 
  * Notes:
+ *  - Your provided keys are case-sensitive
  *  - Two keys will be overidden in event objects: "time" & "info", with one always present even if not provided: "code"
  // const IdealEvent = {
  //     code: 'user_click', //this property not always present
@@ -54,6 +55,7 @@ const packageName = 'react-log-driver'
 //
 
 
+/**When debug === true, display current states in the console. */
 const debug = true
 
 
@@ -69,9 +71,19 @@ const defaultParam = {
     timeInterval: 15000 /* Milliseconds */,
     prepFn: data => data
 }
+//
+/**Defaults for an event log object */
+const newLogStateDefaults = {
+    key: defaultKey,
+    pauseLogging: false,
+    pauseSending: false,
+    pendingSendMax: undefined,
+    timeInterval: undefined,
+    sendFn: null
+}
 
 
-/* Helper functions (5) */
+/* Helper functions (6) */
 //
 /**Takes provided key and returns a usable string */
 function sanitizeRawKey(key) {
@@ -79,19 +91,18 @@ function sanitizeRawKey(key) {
         case 'string':
         case 'number':
         case 'bigint':
-        case 'boolean':
-            return `${key}`.slice(0, maxKeyLength) || defaultKey
-        case 'object':
-            return Array.isArray(key)? key.map(sanitizeRawEvent).join(',').slice(0, maxKeyLength) : defaultKey
-        default:
-            return defaultKey
+        case 'boolean': return `${key}`.slice(0, maxKeyLength) || defaultKey
+        //
+        case 'object': return Array.isArray(key)? key.map(sanitizeRawEvent).join(',').slice(0, maxKeyLength) : defaultKey
+        //
+        default: return defaultKey
     }
 }
 //
 const isPromise = whatever => typeof whatever === 'function' /*DEV_REMINDER: Need to determine if is a promise */
 //
 const sanitizeRawEvent = (event = undefined) => 
-    typeof event === 'object'? event 
+    event instanceof Object? event 
     : ['string', 'number', 'boolean'].includes(typeof event)? 
         ({
             code: event
@@ -109,17 +120,11 @@ const addTimeToEvent = event => ({
 /**For partitioning event logs logically */
 const generateEventLogAtomKey = (key = defaultKey, logNormal = true) => `${packageName}:${key}:${logNormal? 'normal' : 'temp'}`
 //
-/**Defaults for an event log object */
-const newLogDefaults = {
-    key: defaultKey,
-    pauseLogging: false,
-    pauseSending: false
-}
 /**Create a log object */
-const newLog = (param = {}) => ({...newLogDefaults, ...param})
+const newLogState = param => ({...newLogStateDefaults, ...param instanceof Object? param : ['string', 'number', 'bigint'].includes(typeof param)? {key: sanitizeRawEvent(param)} : {}})
 
 
-/**The recoil (7) */
+/**The recoil (8) */
 //
 /**Instances of log batch senders which look over multiple Log key's */
 const logDriversState = atom({
@@ -132,7 +137,6 @@ const eventLogsState = atom({
     key: packageName+':eventLogs',
     default: []
 })
-// {key: 'default', pauseLogging: false, pauseSending: false}
 //
 /**Keys of event logs not to send */
 const eventLogsPausedState = atom({
@@ -193,12 +197,18 @@ const eventLogClearerSelector = selector({
 
 /* The hooks (2) */
 //
+/**For performing operations only on existing event logs */
+const useReduceToExistingKeysSelector = () => {
+    const logsState = useRecoilValue(eventLogsState)
+    return (checkKeys = []) => (Array.isArray(checkKeys)? checkKeys.map(sanitizeRawEvent) : [sanitizeRawEvent(checkKeys)]).reduce((existingKeys, thisKey) => logsState.map(thisLog => thisLog.key || thisLog /*DEV_REMINDER change when event log states are stored as objects*/).includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
+}
+//
 export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn = undefined, paramObject = undefined) {
     let errors = []
     
     /**Cleanup arguments & parameters here */
-    let paramProvided = typeof paramOrSendFn === 'object'? paramOrSendFn 
-        : typeof paramObject === 'object'? paramObject 
+    let paramProvided = paramOrSendFn instanceof Object? paramOrSendFn 
+        : paramObject instanceof Object? paramObject 
         : false
     let param = {
         ...defaultParam,
@@ -247,7 +257,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
             logEvent({
                 ...sanitizeRawEvent(event), 
                 ...typeof moreEventInfo === undefined? {} 
-                    : typeof moreEventInfo === 'object'? moreEventInfo
+                    : moreEventInfo instanceof Object? moreEventInfo
                     : {info: moreEventInfo}
             })
             if (!!runFn) runFn()
@@ -281,6 +291,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
 
     /* Sends & Clears the event log */
     const onSuccess = ({success}) => success && (setEventsNormal(eventsTemp) || clearTemp())
+    /**DEV_REMINDER how does this function get called? */
     const send = mainInstanceSends? 
         (overrideLogic = false) => 
             (overrideLogic || (param.activeSending && !sender.isLoading)) 
@@ -309,6 +320,26 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         return () => clearInterval(intervalId)
     }, [])
 
+    /**For an external link that breaks the webapp;
+     * Send all logs that can be sent, before the webapp unloads
+     */
+    const defaultFlumeParam = {
+        href: undefined
+    }
+    const flume = param => new Promise(() => {
+        if (debug) console.info('useLoggerSender.flume(param)', param)
+        /**Add provided param into defaults */
+        param = {...defaultFlumeParam, param}
+        //
+        // each log, send out all normal & temp logs
+        // when finished, send to param
+    }).finally(param => {
+        if (debug) console.info('useLoggerSender.flume(param).finally(param)', param)
+        /**Add provided param into defaults */
+        param = {...defaultFlumeParam, param}
+        //
+        window.location = param.href
+    })
 
     /**Return methods for the user to control some aspects */
     return {
@@ -316,6 +347,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         check,
         send,
         clear,
+        flume,
         events,
         errors
     }
@@ -351,6 +383,8 @@ export function useLogDriver(...args) {
     /**All keys in the system */
     const [logKeys, setLogKeys] = useRecoilState(eventLogsState)
     if (debug) console.info('logKeys', logKeys)
+    //
+    const reduceToExistingKeys = useReduceToExistingKeysSelector()
     //
     let keys = logKeys//logs.map(({key}) => key)
     //
@@ -391,17 +425,22 @@ export function useLogDriver(...args) {
      */
     let jam = (deactivate = allLogDriverKeys, prevent = ['logging', 'sending']) => logDrive({
         type: 'jam', 
-        keys: typeof deactivate === 'boolean'? !deactivate? [] : allLogDriverKeys
-            : Array.isArray(deactivate)? deactivate.map(sanitizeRawKey).reduce((existingKeys, thisKey) => logKeys.includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
-            : [sanitizeRawKey(deactivate)],
+        keys: typeof deactivate === 'boolean'? !deactivate? [] : allLogDriverKeys.length > 0? allLogDriverKeys : logKeys
+            : Array.isArray(deactivate)? reduceToExistingKeys(deactivate.map(sanitizeRawKey))
+            : reduceToExistingKeys([sanitizeRawKey(deactivate)]),
         prevent
     })
     
     /**If the user "logs out" and all events should be deactivated and cleared*/
-    let logout = () => {
-        /**All events for all event log keys end */
-        jam(true)
-        clear()
+    let logout = (unloadAll = false) => {
+        if (unloadAll) {
+            /**Send all logs  */
+            //send
+        } else {
+            /**All events for all event log keys end */
+            jam(true)
+            clear()
+        }
     }
     
     /**Tell the driver the log uploading or logging can continue
