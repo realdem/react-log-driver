@@ -77,8 +77,8 @@ const newLogStateDefaults = {
     key: defaultKey,
     pauseLogging: false,
     pauseSending: false,
-    pendingSendMax: undefined,
-    timeInterval: undefined,
+    pendingSendMax: defaultParam.pendingSendMax,
+    timeInterval: defaultParam.timeInterval,
     sendFn: null
 }
 
@@ -112,9 +112,17 @@ const sanitizeRawEvent = (event = undefined) =>
             info: ['bigint'].includes(typeof event)? `${event}` : null
         })
 //
-const addTimeToEvent = event => ({
+const addEventMetadata = event => ({
     ...event,
-    time: + new Date()/1000
+    metadata: {
+        /**Ensure any user-provided metadata is still being included in the log */
+        ...event.metadata === undefined? {} : event.metadata instanceof Object? event.metadata : {metadata: event.metadata},
+        time: + new Date()/1000,
+        timeUnix: + new Date()/1000,
+        timeISO: new Date().toISOString(),
+        path: window.location.pathname,
+        href: window.location.href
+    }
 })
 //
 /**For partitioning event logs logically */
@@ -158,7 +166,7 @@ const eventLogPendingSendSelector = selectorFamily({
         // recordKeyHere
         set(eventLogPendingSendState(key), [
             ...get(eventLogPendingSendState(key)), 
-            addTimeToEvent(sanitizeRawEvent(eventProvided))
+            addEventMetadata(sanitizeRawEvent(eventProvided))
         ])
     }
 })
@@ -323,31 +331,23 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
     /**For an external link that breaks the webapp;
      * Send all logs that can be sent, before the webapp unloads
      */
-    const defaultFlumeParam = {
-        href: undefined
+    let navigateTo = href => {
+        let runFunc = new Promise(resolve => {
+            // each log, send out all normal & temp logs
+            // when finished, send to param
+
+            resolve()
+        })
+        return runFunc.then(() => window.location.href = href)
     }
-    const flume = param => new Promise(() => {
-        if (debug) console.info('useLoggerSender.flume(param)', param)
-        /**Add provided param into defaults */
-        param = {...defaultFlumeParam, param}
-        //
-        // each log, send out all normal & temp logs
-        // when finished, send to param
-    }).finally(param => {
-        if (debug) console.info('useLoggerSender.flume(param).finally(param)', param)
-        /**Add provided param into defaults */
-        param = {...defaultFlumeParam, param}
-        //
-        window.location = param.href
-    })
 
     /**Return methods for the user to control some aspects */
     return {
         log,
         check,
         send,
+        navigateTo,
         clear,
-        flume,
         events,
         errors
     }
@@ -458,7 +458,8 @@ export function useLogDriver(...args) {
         else setEventLogsPaused(eventLogsPaused.reduce((all, pausedLog) => unpauseTheseKeys.includes(pausedLog)? all : [...all, pausedLog], []))
     }
 
-    
+    /**DEV_REMINDER needs useLoggerSender() capabilities within this useLogDriver() function */
+
     return {
         // logs,
         keys,
