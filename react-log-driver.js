@@ -208,7 +208,7 @@ const eventLogClearerSelector = selector({
 /**For performing operations only on existing event logs */
 const useReduceToExistingKeysSelector = () => {
     const logsState = useRecoilValue(eventLogsState)
-    return (checkKeys = []) => (Array.isArray(checkKeys)? checkKeys.map(sanitizeRawEvent) : [sanitizeRawEvent(checkKeys)]).reduce((existingKeys, thisKey) => logsState.map(thisLog => thisLog.key || thisLog /*DEV_REMINDER change when event log states are stored as objects*/).includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
+    return (checkKeys = []) => [defaultKey, ...(Array.isArray(checkKeys)? checkKeys.map(sanitizeRawEvent) : [sanitizeRawEvent(checkKeys)])].reduce((existingKeys, thisKey) => logsState.map(thisLog => thisLog.key || thisLog /*DEV_REMINDER change when event log states are stored as objects*/).includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
 }
 //
 export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn = undefined, paramObject = undefined) {
@@ -331,7 +331,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
     /**For an external link that breaks the webapp;
      * Send all logs that can be sent, before the webapp unloads
      */
-    const sendAllLogsThenNavigateToALinkDefaultParam = {
+    const navigateOrLinkToDefaults = {
         id: '', //DEV_REMINDER something very random
         title: '',
         className: '',
@@ -351,23 +351,21 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
 
             resolve()
         })
-        return runFunc.then(() => window.location.href = `${href}` || sendAllLogsThenNavigateToALinkDefaultParam.href)
+        return runFunc.then(() => window.location.href = `${href}` || navigateOrLinkToDefaults.href)
     }
     /**Produce an <a> link that navigates after sending */
-    let sendAllLogsThenNavigateToALink = ({href, rel, target, title, id, className, text, children}) => {
-        href = href || sendAllLogsThenNavigateToALinkDefaultParam.href
-        rel = rel || sendAllLogsThenNavigateToALinkDefaultParam.rel
-        target = target || sendAllLogsThenNavigateToALinkDefaultParam.target
-        title = title || sendAllLogsThenNavigateToALinkDefaultParam.title
-        id = id || sendAllLogsThenNavigateToALinkDefaultParam.id
-        className = className || sendAllLogsThenNavigateToALinkDefaultParam.className
-        text = text || sendAllLogsThenNavigateToALinkDefaultParam.text
-        //
+    let LinkTo = ({href, rel, target, title, id, className, text, children}) => {
+        href = href || navigateOrLinkToDefaults.href
+        rel = rel || navigateOrLinkToDefaults.rel
+        target = target || navigateOrLinkToDefaults.target
+        title = title || navigateOrLinkToDefaults.title
+        id = id || navigateOrLinkToDefaults.id
+        className = className || navigateOrLinkToDefaults.className
+        text = text || navigateOrLinkToDefaults.text
         let onClick = e => {
             e.preventDefault()
             navigateTo(href)
         }
-        //
         return <a {...{href, rel, target, title, id, className, onClick}}>{children || text || href}</a>
     }
 
@@ -377,7 +375,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         check,
         send,
         navigateTo,
-        sendAllLogsThenNavigateToALink,
+        LinkTo,
         clear,
         events,
         errors
@@ -490,6 +488,7 @@ export function useLogDriver(...args) {
     }
 
     /**DEV_REMINDER needs useLoggerSender() capabilities within this useLogDriver() function */
+    const loggerSender = useLoggerSender(args[1] || null, {})
 
     return {
         // logs,
@@ -497,7 +496,8 @@ export function useLogDriver(...args) {
         jam,
         drive,
         clear,
-        logout//,
+        logout,
         // reset
+        loggerSender
     }
 }
