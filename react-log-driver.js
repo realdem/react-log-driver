@@ -194,6 +194,8 @@ const eventLogClearerSelector = selector({
     key: packageName+':eventLogClearerSelector',
     get: ({get}) => get(),
     reset: ({set}, key = undefined) => {
+        /**DEV_REMINDER */
+        if (debug) console.log(eventLogClearerSelector, key)
         if (typeof key === 'string' && key.length > 0) {
             /**Clear both normal & temp events from this log */
             set(eventLogPendingSendState(generateEventLogAtomKey(key, true)), [])
@@ -341,14 +343,16 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         text: null
     }
     //
-    let navigateTo = href => {
+    const sendAll = (onlyTheseKeys = []) => {
+        // DEV_REMINDER
+        console.error('Function not complete yet // 2023-01-14')
+        // each log, send out all normal & temp logs
+        // when finished, send to param
+    }
+    //
+    let navigateTo = (href, onlyTheseKeys = []) => {
         let runFunc = new Promise(resolve => {
-            // DEV_REMINDER
-            console.error('Function not complete yet // 2023-01-14')
-
-            // each log, send out all normal & temp logs
-            // when finished, send to param
-
+            sendAll(onlyTheseKeys)
             resolve()
         })
         return runFunc.then(() => window.location.href = `${href}` || navigateOrLinkToDefaults.href)
@@ -464,7 +468,7 @@ export function useLogDriver(...args) {
     let logout = (unloadAll = false) => {
         if (unloadAll) {
             /**Send all logs  */
-            //send
+            sendAll()
         } else {
             /**All events for all event log keys end */
             jam(true)
