@@ -83,7 +83,10 @@ const newLogStateDefaults = {
 }
 
 
-/* Helper functions (6) */
+/* Helper functions (7) */
+//
+/**Check if a variable is an object with keys */
+const isObject = thisVariable => thisVariable instanceof Object && !Array.isArray(thisVariable)
 //
 /**Takes provided key and returns a usable string */
 function sanitizeRawKey(key) {
@@ -102,7 +105,7 @@ function sanitizeRawKey(key) {
 const isPromise = whatever => typeof whatever === 'function' /*DEV_REMINDER: Need to determine if is a promise */
 //
 const sanitizeRawEvent = (event = undefined) => 
-    event instanceof Object? event 
+    isObject(event)? event 
     : ['string', 'number', 'boolean'].includes(typeof event)? 
         ({
             code: event
@@ -116,7 +119,7 @@ const addEventMetadata = event => ({
     ...event,
     metadata: {
         /**Ensure any user-provided metadata is still being included in the log */
-        ...event.metadata === undefined? {} : event.metadata instanceof Object? event.metadata : {metadata: event.metadata},
+        ...event.metadata === undefined? {} : isObject(event.metadata)? event.metadata : {metadata: event.metadata},
         time: + new Date()/1000,
         timeUnix: + new Date()/1000,
         timeISO: new Date().toISOString(),
@@ -129,7 +132,7 @@ const addEventMetadata = event => ({
 const generateEventLogAtomKey = (key = defaultKey, logNormal = true) => `${packageName}:${key}:${logNormal? 'normal' : 'temp'}`
 //
 /**Create a log object */
-const newLogState = param => ({...newLogStateDefaults, ...param instanceof Object? param : ['string', 'number', 'bigint'].includes(typeof param)? {key: sanitizeRawEvent(param)} : {}})
+const newLogState = param => ({...newLogStateDefaults, ...isObject(param)? param : ['string', 'number', 'bigint'].includes(typeof param)? {key: sanitizeRawEvent(param)} : {}})
 
 
 /**The recoil (8) */
@@ -217,8 +220,8 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
     let errors = []
     
     /**Cleanup arguments & parameters here */
-    let paramProvided = paramOrSendFn instanceof Object? paramOrSendFn 
-        : paramObject instanceof Object? paramObject 
+    let paramProvided = isObject(paramOrSendFn)? paramOrSendFn 
+        : isObject(paramObject)? paramObject 
         : false
     let param = {
         ...defaultParam,
@@ -267,7 +270,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
             logEvent({
                 ...sanitizeRawEvent(event), 
                 ...typeof moreEventInfo === undefined? {} 
-                    : moreEventInfo instanceof Object? moreEventInfo
+                    : isObject(moreEventInfo)? moreEventInfo
                     : {info: moreEventInfo}
             })
             if (!!runFn) runFn()
