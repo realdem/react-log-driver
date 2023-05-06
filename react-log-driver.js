@@ -49,7 +49,7 @@
 /**Import & Initialize dependencies (4) */
 //
 import { useEffect, useState } from 'react'
-import { useMutation } from 'react-query'
+import { useMutation } from '@tanstack/react-query'
 import { atom, atomFamily, selector, selectorFamily, useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil'
 const packageName = 'react-log-driver'
 //
