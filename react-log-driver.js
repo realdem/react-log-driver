@@ -81,6 +81,11 @@ const newLogStateDefaults = {
     timeInterval: defaultParam.timeInterval,
     sendFn: null
 }
+//
+const navigateToDefaults = {
+    target: '_self',
+    onlyTheseKeys: []
+}
 
 
 /* Helper functions (7) */
@@ -102,7 +107,13 @@ function sanitizeRawKey(key) {
     }
 }
 //
-const isPromise = whatever => typeof whatever === 'function' /*DEV_REMINDER: Need to determine if is a promise */
+/*DEV_REMINDER: Need to check if this works */
+const isPromise = whatever => whatever && Object.prototype.toString.call(whatever) === '[object Promise]'
+    // whatever instanceof Promise || (
+    //     typeof whatever === 'function'
+    //     && ('then' in whatever)
+    //     && typeof whatever.then === 'function'
+    // )
 //
 const sanitizeRawEvent = (event = undefined) => 
     isObject(event)? event 
@@ -353,12 +364,13 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         // when finished, send to param
     }
     //
-    let navigateTo = (href, onlyTheseKeys = []) => {
+    let navigateTo = (href, param = {}) => {
+        param = {...navigateToDefaults, ...param}
         let runFunc = new Promise(resolve => {
-            sendAll(onlyTheseKeys)
+            sendAll(param.onlyTheseKeys)
             resolve()
         })
-        return runFunc.then(() => window.location.href = `${href}` || navigateOrLinkToDefaults.href)
+        return runFunc.then(() => window.open(href || navigateOrLinkToDefaults.href, param.target))
     }
     /**Produce an <a> link that navigates after sending */
     let LinkTo = ({href, rel, target, title, id, className, text, children}) => {
