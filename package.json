@@ -20,8 +20,8 @@
     "main": "react-log-driver.js",
     "dependencies": {
         "react": "^18.2.0",
-        "react-query": "^3.39.2",
-        "recoil": "^0.7.6"
+        "react-query": "^3.39.3",
+        "recoil": "^0.7.7"
     },
     "browserslist": {
         "production": [
@@ -30,9 +30,9 @@
             "not op_mini all"
         ],
         "development": [
-            "last 3 chrome version",
-            "last 3 firefox version",
-            "last 3 safari version"
+            "last 5 chrome version",
+            "last 5 firefox version",
+            "last 5 safari version"
         ]
     }
 }
