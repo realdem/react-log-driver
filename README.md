@@ -10,3 +10,4 @@
 
 ## Task list:
 - [ ] Finish everything commented with "DEV_REMINDER"
+- [ ] Test everything out

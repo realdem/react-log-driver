@@ -48,15 +48,15 @@
 
 /**Import & Initialize dependencies (4) */
 //
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { atom, atomFamily, selector, selectorFamily, useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil'
-const packageName = 'react-log-driver'
+const packageName = '@realdem/react-log-driver'
 //
 
 
-/**When debug === true, display current states in the console. */
-const debug = true
+/**When debug is true, console current states */
+const debug = false
 
 
 
@@ -90,6 +90,17 @@ const navigateToDefaults = {
 
 /* Helper functions (7) */
 //
+/**Generate current timestamp */
+const timestamp = (format = null) => {
+    let date = new Date()
+    switch (format.toString().toLowerCase()) {
+        case 'unix': return date/1000
+        case 'string': return date.toString()
+        case 'iso': return date.toISOString()
+        default: return date
+    }
+}
+//
 /**Check if a variable is an object with keys */
 const isObject = thisVariable => thisVariable instanceof Object && !Array.isArray(thisVariable)
 //
@@ -100,20 +111,13 @@ function sanitizeRawKey(key) {
         case 'number':
         case 'bigint':
         case 'boolean': return `${key}`.slice(0, maxKeyLength) || defaultKey
-        //
         case 'object': return Array.isArray(key)? key.map(sanitizeRawEvent).join(',').slice(0, maxKeyLength) : defaultKey
-        //
         default: return defaultKey
     }
 }
 //
-/*DEV_REMINDER: Need to check if this works */
-const isPromise = whatever => whatever && Object.prototype.toString.call(whatever) === '[object Promise]'
-    // whatever instanceof Promise || (
-    //     typeof whatever === 'function'
-    //     && ('then' in whatever)
-    //     && typeof whatever.then === 'function'
-    // )
+/**Check if provided function is asynchronous */
+const isPromiseOrAsyncFunc = whatever => Boolean(whatever && ['[object Promise]', '[object AsyncFunction]'].includes(Object.prototype.toString.call(whatever)))
 //
 const sanitizeRawEvent = (event = undefined) => 
     isObject(event)? event 
@@ -131,9 +135,9 @@ const addEventMetadata = event => ({
     metadata: {
         /**Ensure any user-provided metadata is still being included in the log */
         ...event.metadata === undefined? {} : isObject(event.metadata)? event.metadata : {metadata: event.metadata},
-        time: + new Date()/1000,
-        timeUnix: + new Date()/1000,
-        timeISO: new Date().toISOString(),
+        time: timestamp(),
+        timeUnix: timestamp('unix'),
+        timeISO: timestamp('iso'),
         path: window.location.pathname,
         href: window.location.href
     }
@@ -191,7 +195,7 @@ const eventLogDriverSelector = selector({
     get: ({get}) => get(),
     set: ({get, set}, param) => {
         // type, keys = [], action
-        if (debug) console.info('eventLogDriverSelector.set()', param)
+        if (debug) console.info(packageName, 'eventLogDriverSelector.set()', param)
         //
         switch (param.type) {
             case 'jam':
@@ -206,10 +210,10 @@ const eventLogDriverSelector = selector({
 /**Clear event logs */
 const eventLogClearerSelector = selector({
     key: packageName+':eventLogClearerSelector',
-    get: ({get}) => get(),
+    get: () => {},
     reset: ({set}, key = undefined) => {
         /**DEV_REMINDER */
-        if (debug) console.log(eventLogClearerSelector, key)
+        if (debug) console.log(packageName, 'eventLogClearerSelector', key)
         if (typeof key === 'string' && key.length > 0) {
             /**Clear both normal & temp events from this log */
             set(eventLogPendingSendState(generateEventLogAtomKey(key, true)), [])
@@ -241,9 +245,9 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
     //
     let key = sanitizeRawKey(`${keyOrSendFn}` || `${param.key || ''}` || defaultKey)
     //
-    let sendFn = isPromise(keyOrSendFn)? keyOrSendFn 
-        : isPromise(paramOrSendFn)? paramOrSendFn
-        : !!paramProvided && ('sendFn' in paramProvided) && isPromise(paramProvided.sendFn)? paramProvided.sendFn
+    let sendFn = isPromiseOrAsyncFunc(keyOrSendFn)? keyOrSendFn 
+        : isPromiseOrAsyncFunc(paramOrSendFn)? paramOrSendFn
+        : !!paramProvided && ('sendFn' in paramProvided) && isPromiseOrAsyncFunc(paramProvided.sendFn)? paramProvided.sendFn
         : undefined
 
 
@@ -321,7 +325,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
             (overrideLogic || (param.activeSending && !sender.isLoading)) 
             && sender.mutate(param.prepFn(eventsNormal), {onSuccess})
         : (useSendFn = null, prepFn = null) => 
-            !isPromise(useSendFn)? false 
+            !isPromiseOrAsyncFunc(useSendFn)? false 
             : sender.mutate(typeof prepFn === 'function'? prepFn(eventsNormal) : param.prepFn(eventsNormal), {
                 mutationFn: useSendFn,
                 onSuccess
@@ -364,6 +368,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         // when finished, send to param
     }
     //
+    /**DEV_REMINDER: Write function's description here */
     let navigateTo = (href, param = {}) => {
         param = {...navigateToDefaults, ...param}
         let runFunc = new Promise(resolve => {
@@ -381,10 +386,10 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         id = id || navigateOrLinkToDefaults.id
         className = className || navigateOrLinkToDefaults.className
         text = text || navigateOrLinkToDefaults.text
-        let onClick = e => {
+        const onClick = useCallback(e => {
             e.preventDefault()
-            navigateTo(href)
-        }
+            navigateTo(href, {target})
+        }, [href, target])
         return <a {...{href, rel, target, title, id, className, onClick}}>{children || text || href}</a>
     }
 
@@ -424,20 +429,20 @@ export function useLogDriver(...args) {
     //
     const [eventLogsPaused, setEventLogsPaused] = useRecoilState(eventLogsPausedState)
     const resetEventLogsPaused = useResetRecoilState(eventLogsPausedState)
-    if (debug) console.info('eventLogsPaused', eventLogsPaused)
+    if (debug) console.info(packageName, 'eventLogsPaused', eventLogsPaused)
     //
     const eventLogClearerReset = useResetRecoilState(eventLogClearerSelector)
     //
     /**All keys in the system */
     const [logKeys, setLogKeys] = useRecoilState(eventLogsState)
-    if (debug) console.info('logKeys', logKeys)
+    if (debug) console.info(packageName, 'logKeys', logKeys)
     //
     const reduceToExistingKeys = useReduceToExistingKeysSelector()
     //
     let keys = logKeys//logs.map(({key}) => key)
     //
     const [allLogDriverKeys, setAllLogDriverKeys]  = useRecoilState(logDriversState)
-    if (debug) console.info('allLogDriverKeys', allLogDriverKeys)
+    if (debug) console.info(packageName, 'allLogDriverKeys', allLogDriverKeys)
     //
 
     let driveTheseKeys = args[0] === undefined? (logKeys.length > 0? logKeys : [defaultKey])
@@ -445,7 +450,7 @@ export function useLogDriver(...args) {
         : Array.isArray(args[0])? [args[0]]
         : args.find(arg => typeof arg === 'array' && Boolean(arg.filter(a => typeof a === 'string' && a.length > 0).length > 0))
             .filter(key => typeof key === 'string' && key.length > 0)
-    if (debug) console.info('driveTheseKeys', driveTheseKeys)
+    if (debug) console.info(packageName, 'driveTheseKeys', driveTheseKeys)
     
     /**Add any missing keys to all keys */
     let missingLogKeys = driveTheseKeys.reduce((missing, key) => logKeys.includes(key)? missing : [...missing, key], [])
@@ -471,7 +476,10 @@ export function useLogDriver(...args) {
      * This is useful if the App wants to temporarily cut off adding more into memory or onto its network requests.
      * You can even deactivate log sending for log-keys that you haven't specified the driver to look after.
      */
-    let jam = (deactivate = allLogDriverKeys, prevent = ['logging', 'sending']) => logDrive({
+    let jam = (
+        deactivate = allLogDriverKeys,
+        prevent = ['logging', 'sending']
+    ) => logDrive({
         type: 'jam', 
         keys: typeof deactivate === 'boolean'? !deactivate? [] : allLogDriverKeys.length > 0? allLogDriverKeys : logKeys
             : Array.isArray(deactivate)? reduceToExistingKeys(deactivate.map(sanitizeRawKey))
