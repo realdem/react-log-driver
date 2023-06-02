@@ -51,12 +51,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { atom, atomFamily, selector, selectorFamily, useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil'
+//
 const packageName = '@realdem/react-log-driver'
 //
 
 
-/**When debug is true, console current states */
-const debug = false
+/**Display states & errors in the console? */
+const debug = true
+const consoleErrors = true
 
 
 
@@ -93,6 +95,7 @@ const navigateToDefaults = {
 /**Generate current timestamp */
 const timestamp = (format = null) => {
     let date = new Date()
+    if (!format) return date
     switch (format.toString().toLowerCase()) {
         case 'unix': return date/1000
         case 'string': return date.toString()
@@ -147,7 +150,10 @@ const addEventMetadata = event => ({
 const generateEventLogAtomKey = (key = defaultKey, logNormal = true) => `${packageName}:${key}:${logNormal? 'normal' : 'temp'}`
 //
 /**Create a log object */
-const newLogState = param => ({...newLogStateDefaults, ...isObject(param)? param : ['string', 'number', 'bigint'].includes(typeof param)? {key: sanitizeRawEvent(param)} : {}})
+const newLogState = param => ({
+    ...newLogStateDefaults,
+    ...isObject(param)? param : ['string', 'number', 'bigint'].includes(typeof param)? {key: sanitizeRawEvent(param)} : {}
+})
 
 
 /**The recoil (8) */
@@ -180,13 +186,11 @@ const eventLogPendingSendState = atomFamily({
 const eventLogPendingSendSelector = selectorFamily({
     key: packageName+':eventLogPendingSendSelector',
     get: (key = defaultKey) => ({get}) => get(eventLogPendingSendState(key)),
-    set: (key = defaultKey) => ({get, set}, eventProvided) => {
-        // recordKeyHere
-        set(eventLogPendingSendState(key), [
-            ...get(eventLogPendingSendState(key)), 
+    set: (key = defaultKey) => ({set}, eventProvided) => 
+        set(eventLogPendingSendState(key), prev => [
+            ...prev, 
             addEventMetadata(sanitizeRawEvent(eventProvided))
         ])
-    }
 })
 //
 /**Handle log driver commands */
@@ -211,7 +215,7 @@ const eventLogDriverSelector = selector({
 const eventLogClearerSelector = selector({
     key: packageName+':eventLogClearerSelector',
     get: () => {},
-    reset: ({set}, key = undefined) => {
+    set: ({set}, key = undefined) => {
         /**DEV_REMINDER */
         if (debug) console.log(packageName, 'eventLogClearerSelector', key)
         if (typeof key === 'string' && key.length > 0) {
@@ -220,6 +224,19 @@ const eventLogClearerSelector = selector({
             set(eventLogPendingSendState(generateEventLogAtomKey(key, false)), [])
         }
     }
+})
+//
+/**Get the logs by keys */
+const eventLogsGetter = selectorFamily({
+    key: packageName+':eventLogsGetter',
+    get: (logKeys = []) => ({get}) => 
+        logKeys.reduce((all, key) => ({
+            ...all,
+            [key]: [
+                ...get(eventLogPendingSendState(generateEventLogAtomKey(key))),
+                ...get(eventLogPendingSendState(generateEventLogAtomKey(key, false)))
+            ]
+        }), {})
 })
 
 
@@ -243,12 +260,21 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         ...paramProvided || {}
     }
     //
-    let key = sanitizeRawKey(`${keyOrSendFn}` || `${param.key || ''}` || defaultKey)
+    let key = sanitizeRawKey(typeof keyOrSendFn === 'string'? keyOrSendFn : `${param.key || ''}` || defaultKey)
     //
     let sendFn = isPromiseOrAsyncFunc(keyOrSendFn)? keyOrSendFn 
         : isPromiseOrAsyncFunc(paramOrSendFn)? paramOrSendFn
         : !!paramProvided && ('sendFn' in paramProvided) && isPromiseOrAsyncFunc(paramProvided.sendFn)? paramProvided.sendFn
         : undefined
+    //
+    /**Tell the developer that the sendFn needs to be asynchronous */
+    if (
+        (typeof keyOrSendFn === 'function' && !isPromiseOrAsyncFunc(keyOrSendFn))
+        && (typeof paramOrSendFn === 'function' && !isPromiseOrAsyncFunc(paramOrSendFn))
+    ) errors.push({
+            code: 'SENDFN_NOT_A_PROMISE',
+            msg: 'A sendFn was defined to useLoggerSender() but it is not asynchronous '
+        })
 
 
     /**Determine if this is the main instance hook that is called within the app */
@@ -257,16 +283,15 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
     ) && (!('simpleInstance' in param) || !Boolean(param.simpleInstance))
     /**Determine if this is a mainInstance that sends */
     const mainInstanceSends = mainInstance && sendFn !== undefined
-
-
+    
     /**React-Query mutation for sending simplicity */
-    const sender = useMutation({
+    const sender = !mainInstanceSends? null : useMutation({
         mutationKey: [packageName, key, 'event-log-send'],
         ...mainInstanceSends? {mutationFn: sendFn} : {}
     })
     //
     /**Normally we log events into an array, but when we are sending the array, we need a temporary array to store events while the server is accepting the current batch. */
-    let useNormalLog = !sender.isLoading
+    let useNormalLog = !!sender && !sender.isLoading
     
 
     /**Separate functions for setting atom w/n an atomFamily via a selectorFamily */
@@ -300,7 +325,10 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
     //
     //
     /**This hook can be simple or high-level, depending on if a Promise is provided as first argument */
-    if (!mainInstance) return log
+    if (!mainInstance) {
+        if (consoleErrors) errors.forEach(console.error)
+        return log
+    }
     //
     //
     //
@@ -358,7 +386,8 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         href: '#',
         rel: 'noreferrer',
         target: '',
-        text: null
+        text: null,
+        download: false
     }
     //
     const sendAll = (onlyTheseKeys = []) => {
@@ -378,7 +407,7 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         return runFunc.then(() => window.open(href || navigateOrLinkToDefaults.href, param.target))
     }
     /**Produce an <a> link that navigates after sending */
-    let LinkTo = ({href, rel, target, title, id, className, text, children}) => {
+    let LinkTo = ({href, rel, target, title, id, className, text, children, download}) => {
         href = href || navigateOrLinkToDefaults.href
         rel = rel || navigateOrLinkToDefaults.rel
         target = target || navigateOrLinkToDefaults.target
@@ -386,14 +415,16 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         id = id || navigateOrLinkToDefaults.id
         className = className || navigateOrLinkToDefaults.className
         text = text || navigateOrLinkToDefaults.text
+        download = download || navigateOrLinkToDefaults.download
         const onClick = useCallback(e => {
             e.preventDefault()
             navigateTo(href, {target})
         }, [href, target])
-        return <a {...{href, rel, target, title, id, className, onClick}}>{children || text || href}</a>
+        return <a {...{href, rel, target, title, id, className, onClick, download}}>{children || text || href}</a>
     }
 
     /**Return methods for the user to control some aspects */
+    if (consoleErrors) errors.forEach(console.error)
     return {
         log,
         check,
@@ -431,7 +462,7 @@ export function useLogDriver(...args) {
     const resetEventLogsPaused = useResetRecoilState(eventLogsPausedState)
     if (debug) console.info(packageName, 'eventLogsPaused', eventLogsPaused)
     //
-    const eventLogClearerReset = useResetRecoilState(eventLogClearerSelector)
+    const eventLogClearerReset = useSetRecoilState(eventLogClearerSelector)
     //
     /**All keys in the system */
     const [logKeys, setLogKeys] = useRecoilState(eventLogsState)
@@ -447,7 +478,7 @@ export function useLogDriver(...args) {
 
     let driveTheseKeys = args[0] === undefined? (logKeys.length > 0? logKeys : [defaultKey])
         : typeof args[0] === 'string'? [args[0]]
-        : Array.isArray(args[0])? [args[0]]
+        : Array.isArray(args[0])? args[0]
         : args.find(arg => typeof arg === 'array' && Boolean(arg.filter(a => typeof a === 'string' && a.length > 0).length > 0))
             .filter(key => typeof key === 'string' && key.length > 0)
     if (debug) console.info(packageName, 'driveTheseKeys', driveTheseKeys)
@@ -515,16 +546,19 @@ export function useLogDriver(...args) {
     }
 
     /**DEV_REMINDER needs useLoggerSender() capabilities within this useLogDriver() function */
-    const loggerSender = useLoggerSender(args[1] || null, {})
+    // const loggerSender = useLoggerSender(args[1] || null, {})
 
+    /**Object of all logs by key >> Array of each's events */
+    const logs = useRecoilValue(eventLogsGetter(keys))
+    
     return {
-        // logs,
+        logs,
         keys,
         jam,
         drive,
         clear,
         logout,
         // reset
-        loggerSender
+        // loggerSender
     }
 }
