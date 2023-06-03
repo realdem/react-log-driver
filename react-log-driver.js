@@ -577,7 +577,14 @@ export function useLogDriver(...args) {
 /**Wrap the application in a LogRiver component */
 export const LogRiver = ({children, queryClient = null}) => {
     /**Allow the user to submit their own queryClient */
-    const queryClient = isObject(queryClient)? queryClient
+    let userProvidedQueryClient = isObject(queryClient)
+        && ('constructor' in queryClient)
+        && ('name' in queryClient.constructor)
+        && queryClient.constructor.name === 'QueryClient'
+    //
+    if (debug) console.info(packageName, '<LogRiver> userProvidedQueryClient', userProvidedQueryClient)
+    //
+    queryClient = userProvidedQueryClient? queryClient
         : new QueryClient({
             defaultOptions: {
                 queries: {
