@@ -156,7 +156,7 @@ const newLogState = param => ({
 })
 
 
-/**The recoil (8) */
+/**The recoil (9) */
 //
 /**Instances of log batch senders which look over multiple Log key's */
 const logDriversState = atom({
@@ -168,6 +168,13 @@ const logDriversState = atom({
 const eventLogsState = atom({
     key: packageName+':eventLogs',
     default: []
+})
+//
+/**Makes sure useLoggerSender(key) exists */
+const eventLogKeyExisterState = selectorFamily({
+    key: packageName+':eventLogKeyExisterState',
+    get: () => {},
+    set: (keys = [defaultKey]) => ({set}) => set(eventLogsState, prev => [...new Set([...prev, ...keys])])
 })
 //
 /**Keys of event logs not to send */
@@ -248,7 +255,7 @@ const useReduceToExistingKeysSelector = () => {
     return (checkKeys = []) => [defaultKey, ...(Array.isArray(checkKeys)? checkKeys.map(sanitizeRawEvent) : [sanitizeRawEvent(checkKeys)])].reduce((existingKeys, thisKey) => logsState.map(thisLog => thisLog.key || thisLog /*DEV_REMINDER change when event log states are stored as objects*/).includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
 }
 //
-export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn = undefined, paramObject = undefined) {
+export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn = undefined, paramObject = undefined) {
     let errors = []
     
     /**Cleanup arguments & parameters here */
@@ -261,6 +268,9 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
     }
     //
     let key = sanitizeRawKey(typeof keyOrSendFn === 'string'? keyOrSendFn : `${param.key || ''}` || defaultKey)
+    /**Make sure key exists */
+    const eventLogKeyExister = useSetRecoilState(eventLogKeyExisterState([key]))
+    eventLogKeyExister()
     //
     let sendFn = isPromiseOrAsyncFunc(keyOrSendFn)? keyOrSendFn 
         : isPromiseOrAsyncFunc(paramOrSendFn)? paramOrSendFn
@@ -272,9 +282,9 @@ export default function useLoggerSender (keyOrSendFn = undefined, paramOrSendFn 
         (typeof keyOrSendFn === 'function' && !isPromiseOrAsyncFunc(keyOrSendFn))
         && (typeof paramOrSendFn === 'function' && !isPromiseOrAsyncFunc(paramOrSendFn))
     ) errors.push({
-            code: 'SENDFN_NOT_A_PROMISE',
-            msg: 'A sendFn was defined to useLoggerSender() but it is not asynchronous '
-        })
+        code: 'SENDFN_NOT_A_PROMISE',
+        msg: 'A sendFn was defined to useLoggerSender() but it is not asynchronous '
+    })
 
 
     /**Determine if this is the main instance hook that is called within the app */
@@ -549,11 +559,11 @@ export function useLogDriver(...args) {
     // const loggerSender = useLoggerSender(args[1] || null, {})
 
     /**Object of all logs by key >> Array of each's events */
-    const logs = useRecoilValue(eventLogsGetter(keys))
+    const logs = useRecoilValue(eventLogsGetter(driveTheseKeys))
     
     return {
         logs,
-        keys,
+        keys: driveTheseKeys,
         jam,
         drive,
         clear,
