@@ -134,7 +134,6 @@ const sanitizeRawEvent = (event = undefined) =>
         })
 //
 const addEventMetadata = event => ({
-    ...event,
     metadata: {
         /**Ensure any user-provided metadata is still being included in the log */
         ...event.metadata === undefined? {} : isObject(event.metadata)? event.metadata : {metadata: event.metadata},
@@ -142,8 +141,11 @@ const addEventMetadata = event => ({
         timeUnix: timestamp('unix'),
         timeISO: timestamp('iso'),
         path: window.location.pathname,
-        href: window.location.href
-    }
+        href: window.location.href,
+        userId: null
+    },
+    data: null,
+    ...event
 })
 //
 /**For partitioning event logs logically */
@@ -465,6 +467,7 @@ export function log(...args) {
 
 /**Have instances of log batch senders which look over multiple Log key's */
 //
+/**DEV_REMINDER: Ability to set interval */
 export function useLogDriver(...args) {
     const logDrive = useSetRecoilState(eventLogDriverSelector)
     //
@@ -527,12 +530,18 @@ export function useLogDriver(...args) {
             : reduceToExistingKeys([sanitizeRawKey(deactivate)]),
         prevent
     })
+
+    /**Sending
+     * DEV_REMINDER
+     */
+    const sendFn = null
+    const sendAll = () => {}
     
     /**If the user "logs out" and all events should be deactivated and cleared*/
     let logout = (unloadAll = false) => {
         if (unloadAll) {
             /**Send all logs  */
-            sendAll()
+            if (sendFn) sendAll()
         } else {
             /**All events for all event log keys end */
             jam(true)
@@ -565,7 +574,9 @@ export function useLogDriver(...args) {
         logs,
         keys: driveTheseKeys,
         jam,
+        jammed: eventLogsPaused,
         drive,
+        driving: driveTheseKeys.filter(key => !eventLogsPaused.includes(key)),
         clear,
         logout,
         // reset
@@ -584,20 +595,14 @@ export const LogRiver = ({children, queryClient = null}) => {
     //
     if (debug) console.info(packageName, '<LogRiver> userProvidedQueryClient', userProvidedQueryClient)
     //
-    queryClient = userProvidedQueryClient? queryClient
-        : new QueryClient({
-            defaultOptions: {
-                queries: {
-                    enabled: true,
-                    refetchInterval: 4*60*1000 /*Every 5 minutes*/,
-                    refetchOnMount: false,
-                    refetchOnWindowFocus: false,
-                    refetchIntervalInBackground: false,
-                    retry: false,
-                    onError: console.error
-                }
+    if (!userProvidedQueryClient) queryClient = new QueryClient({
+        defaultOptions: {
+            mutations: {
+                staleTime: Infinity,
+                onError: console.error
             }
-        })
+        }
+    })
 
     return <RecoilRoot override={false}>
         <QueryClientProvider client={queryClient}>
