@@ -49,8 +49,8 @@
 /**Import & Initialize dependencies (4) */
 //
 import { useCallback, useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { atom, atomFamily, selector, selectorFamily, useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil'
+import { useMutation, QueryClientProvider, QueryClient } from '@tanstack/react-query'
+import { RecoilRoot, atom, atomFamily, selector, selectorFamily, useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil'
 //
 const packageName = '@realdem/react-log-driver'
 //
@@ -571,4 +571,30 @@ export function useLogDriver(...args) {
         // reset
         // loggerSender
     }
+}
+
+
+/**Wrap the application in a LogRiver component */
+export const LogRiver = ({children, queryClient = null}) => {
+    /**Allow the user to submit their own queryClient */
+    const queryClient = isObject(queryClient)? queryClient
+        : new QueryClient({
+            defaultOptions: {
+                queries: {
+                    enabled: true,
+                    refetchInterval: 4*60*1000 /*Every 5 minutes*/,
+                    refetchOnMount: false,
+                    refetchOnWindowFocus: false,
+                    refetchIntervalInBackground: false,
+                    retry: false,
+                    onError: console.error
+                }
+            }
+        })
+
+    return <RecoilRoot override={false}>
+        <QueryClientProvider client={queryClient}>
+            {children}
+        </QueryClientProvider>
+    </RecoilRoot>
 }
