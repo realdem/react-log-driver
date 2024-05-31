@@ -1,6 +1,6 @@
 /**
  * "react-log-driver"
- * Version: 0.5.03
+ * Version: 0.5.4
  * License: MIT
  * Author: Dan Michael <dan@danmichael.consulting>, started early 2022
  * 
@@ -91,8 +91,12 @@ const navigateToDefaults = {
 
 
 /* Helper functions (7) */
-//
-/**Generate current timestamp */
+
+/**
+ * Generate current timestamp
+ * @param {string} format - The format to return the timestamp in
+ * @returns {Date|number|string} The current timestamp
+ */
 const timestamp = (format = null) => {
     let date = new Date()
     if (!format) return date
@@ -107,7 +111,11 @@ const timestamp = (format = null) => {
 /**Check if a variable is an object with keys */
 const isObject = thisVariable => thisVariable instanceof Object && !Array.isArray(thisVariable)
 //
-/**Takes provided key and returns a usable string */
+/**
+ * Takes provided key and returns a usable string
+ * @param {*} key
+ * @returns {string}
+ */
 function sanitizeRawKey(key) {
     switch (typeof key) {
         case 'string':
@@ -465,9 +473,14 @@ export function log(...args) {
 }
 
 
-/**Have instances of log batch senders which look over multiple Log key's */
-//
-/**DEV_REMINDER: Ability to set interval */
+/**
+ * Have instances of log batch senders which look over multiple Log key's
+ * // DEV_REMINDER: Ability to set interval
+ * @param {string} key - The key to use for this log batch sender
+ * @param {function} sendFn - The function to send the log batch
+ * @param {object} param - The parameters for this log batch sender
+ * @returns {object} The log batch sender
+ */
 export function useLogDriver(...args) {
     const logDrive = useSetRecoilState(eventLogDriverSelector)
     //
@@ -585,10 +598,15 @@ export function useLogDriver(...args) {
 }
 
 
-/**Wrap the application in a LogRiver component */
+/**
+ * Wrap the application in a LogRiver component
+ * @param {QueryClient} props.queryClient - An instance of QueryClient
+ * @param {ReactNode} props.children - The application to wrap
+ * @returns {ReactNode} The wrapped application
+ * */
 export const LogRiver = ({children, queryClient = null}) => {
     /**Allow the user to submit their own queryClient */
-    let userProvidedQueryClient = isObject(queryClient)
+    const userProvidedQueryClient = isObject(queryClient)
         && ('constructor' in queryClient)
         && ('name' in queryClient.constructor)
         && queryClient.constructor.name === 'QueryClient'
