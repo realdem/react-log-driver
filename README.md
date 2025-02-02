@@ -6,6 +6,7 @@ This project provides a way to collect and send custom event logs from a React a
 
 ## Task list:
 - Finish everything commented with "DEV_REMINDER"
+- Update for React 19 by replacing recoil with jotai
 - Test everything out
 - Project board [seen here](https://github.com/users/realdem/projects/1)
 
