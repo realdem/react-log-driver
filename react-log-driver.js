@@ -1,17 +1,16 @@
 /**
  * "react-log-driver"
- * Version: 0.5.4
- * License: MIT
+ * Version: 0.6.0
+ * License: Free Code License
  * Author: Dan Michael <dan@danmichael.consulting>, started early 2022
  * 
  * Requirements: For ReactJS running in web browsers, with 2 installed dependencies.
  * 
  * Use this to collect any amount of objects to send to your server.
  * Provide a persistent instance per key with a send function "sendFn" 
- * //DEV_REMINDER: Coming soon Otherwise provide  a persistent "driver" with sets of keys to upload.
  * You drop a bunch of log(yourObject) into your components.
  * This tool will collect them all and send it to your servr every X seconds
- * It combines the best of ReactQuery and Recoil into your project.
+ * It combines the best of ReactQuery and Jotai into your project.
  * 
  * Coming soon:
  *  - interval time to send, regardless how many objects are logged
@@ -22,7 +21,7 @@
  * 
  * 
  * Steps to use:
- * 1. Wrap your app in <RecoilRoot> and <QueryClientProvider>
+ * 1. Wrap your app in <QueryClientProvider>
  * 2. Deploy a main instance like this
  *      const eventLog = useLoggerSender(key, Promise, parameters)
  * 3. Log events throughout your app like this
@@ -50,7 +49,9 @@
 //
 import { useCallback, useEffect, useState } from 'react'
 import { useMutation, QueryClientProvider, QueryClient } from '@tanstack/react-query'
-import { RecoilRoot, atom, atomFamily, selector, selectorFamily, useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { atomFamily } from 'jotai/utils'
+import { Provider as JotaiProvider } from 'jotai'
 //
 const packageName = '@realdem/react-log-driver'
 //
@@ -166,103 +167,112 @@ const newLogState = param => ({
 })
 
 
-/**The recoil (9) */
+/**The jotai atoms (9) */
 //
 /**Instances of log batch senders which look over multiple Log key's */
-const logDriversState = atom({
-    key: packageName+':logDrivers',
-    default: []
-})
+const logDriversAtom = atom([])
 //
 /**Store all keys here */
-const eventLogsState = atom({
-    key: packageName+':eventLogs',
-    default: []
-})
-//
-/**Makes sure useLoggerSender(key) exists */
-const eventLogKeyExisterState = selectorFamily({
-    key: packageName+':eventLogKeyExisterState',
-    get: () => {},
-    set: (keys = [defaultKey]) => ({set}) => set(eventLogsState, prev => [...new Set([...prev, ...keys])])
-})
+const eventLogsAtom = atom([])
 //
 /**Keys of event logs not to send */
-const eventLogsPausedState = atom({
-    key: packageName+':eventLogsPaused',
-    default: []
-})
+const eventLogsPausedAtom = atom([])
 //
 /**Store objects here (intending logged events) */
-const eventLogPendingSendState = atomFamily({
-    key: packageName+':eventLogPendingSend',
-    default: []
-})
+const eventLogPendingSendAtomFamily = atomFamily(() => atom([]))
 //
-/**Handle the stored objects here */
-const eventLogPendingSendSelector = selectorFamily({
-    key: packageName+':eventLogPendingSendSelector',
-    get: (key = defaultKey) => ({get}) => get(eventLogPendingSendState(key)),
-    set: (key = defaultKey) => ({set}, eventProvided) => 
-        set(eventLogPendingSendState(key), prev => [
-            ...prev, 
-            addEventMetadata(sanitizeRawEvent(eventProvided))
-        ])
-})
+/**Derived atom for adding event keys */
+const eventLogKeyAdderAtom = atom(
+    null,
+    (get, set, keys = [defaultKey]) => {
+        const current = get(eventLogsAtom)
+        set(eventLogsAtom, [...new Set([...current, ...keys])])
+    }
+)
 //
-/**Handle log driver commands */
-const eventLogDriverSelector = selector({
-    key: packageName+':eventLogDriverSelector',
-    get: ({get}) => get(),
-    set: ({get, set}, param) => {
-        // type, keys = [], action
-        if (debug) console.info(packageName, 'eventLogDriverSelector.set()', param)
-        //
+/**Derived atom for adding events to pending send */
+const eventLogPendingAdderAtomFamily = atomFamily((key = defaultKey) => 
+    atom(
+        (get) => get(eventLogPendingSendAtomFamily(key)),
+        (get, set, eventProvided) => {
+            const current = get(eventLogPendingSendAtomFamily(key))
+            set(eventLogPendingSendAtomFamily(key), [
+                ...current,
+                addEventMetadata(sanitizeRawEvent(eventProvided))
+            ])
+        }
+    )
+)
+//
+/**Derived atom for log driver commands */
+const eventLogDriverAtom = atom(
+    null,
+    (get, set, param) => {
+        if (debug) console.info(packageName, 'eventLogDriverAtom.set()', param)
         switch (param.type) {
             case 'jam':
-                set(eventLogsPausedState, [...new Set([...get(eventLogsPausedState), ...param.keys])])
-                /**DEV_REMINDER need to "prevent" whatever is provided as the param.action, if 'logging' and/or 'sending' is provided */
+                const current = get(eventLogsPausedAtom)
+                set(eventLogsPausedAtom, [...new Set([...current, ...param.keys])])
                 break;
             default: break;
         }
     }
-})
+)
 //
-/**Clear event logs */
-const eventLogClearerSelector = selector({
-    key: packageName+':eventLogClearerSelector',
-    get: () => {},
-    set: ({set}, key = undefined) => {
-        /**DEV_REMINDER */
-        if (debug) console.log(packageName, 'eventLogClearerSelector', key)
+/**Derived atom for clearing event logs */
+const eventLogClearerAtom = atom(
+    null,
+    (get, set, key = undefined) => {
+        if (debug) console.log(packageName, 'eventLogClearerAtom', key)
         if (typeof key === 'string' && key.length > 0) {
-            /**Clear both normal & temp events from this log */
-            set(eventLogPendingSendState(generateEventLogAtomKey(key, true)), [])
-            set(eventLogPendingSendState(generateEventLogAtomKey(key, false)), [])
+            set(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key, true)), [])
+            set(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key, false)), [])
         }
     }
-})
+)
 //
-/**Get the logs by keys */
-const eventLogsGetter = selectorFamily({
-    key: packageName+':eventLogsGetter',
-    get: (logKeys = []) => ({get}) => 
+/**Derived atom for getting logs by keys */
+const eventLogsGetterAtomFamily = atomFamily((logKeys = []) => 
+    atom((get) => 
         logKeys.reduce((all, key) => ({
             ...all,
             [key]: [
-                ...get(eventLogPendingSendState(generateEventLogAtomKey(key))),
-                ...get(eventLogPendingSendState(generateEventLogAtomKey(key, false)))
+                ...get(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key))),
+                ...get(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key, false)))
             ]
         }), {})
-})
+    )
+)
 
 
 /* The hooks (2) */
 //
 /**For performing operations only on existing event logs */
 const useReduceToExistingKeysSelector = () => {
-    const logsState = useRecoilValue(eventLogsState)
-    return (checkKeys = []) => [defaultKey, ...(Array.isArray(checkKeys)? checkKeys.map(sanitizeRawEvent) : [sanitizeRawEvent(checkKeys)])].reduce((existingKeys, thisKey) => logsState.map(thisLog => thisLog.key || thisLog /*DEV_REMINDER change when event log states are stored as objects*/).includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
+    const logsState = useAtomValue(eventLogsAtom)
+    /**
+     * TODO: Event Log State Storage Enhancement
+     * Current Implementation:
+     * - Event logs are stored as simple strings/primitives
+     * - The .key property fallback is used for backward compatibility
+     * 
+     * Planned Enhancement:
+     * - Store event logs as structured objects with consistent schema
+     * - Schema: {
+     *     key: string,           // Unique identifier for the log
+     *     type: string,          // Type of log (e.g., 'error', 'info', 'warning')
+     *     timestamp: number,     // Unix timestamp
+     *     metadata: Object,      // Additional contextual data
+     *     data: any             // The actual log content
+     * }
+     * 
+     * Migration Steps:
+     * 1. Update atomFamily to store objects instead of primitives
+     * 2. Add migration logic for existing log entries
+     * 3. Update all log creation points to use new object structure
+     * 4. Remove the .key || thisLog fallback after migration
+     */
+    return (checkKeys = []) => [defaultKey, ...(Array.isArray(checkKeys)? checkKeys.map(sanitizeRawEvent) : [sanitizeRawEvent(checkKeys)])].reduce((existingKeys, thisKey) => logsState.map(thisLog => thisLog.key || thisLog).includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
 }
 //
 export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn = undefined, paramObject = undefined) {
@@ -279,8 +289,8 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
     //
     let key = sanitizeRawKey(typeof keyOrSendFn === 'string'? keyOrSendFn : `${param.key || ''}` || defaultKey)
     /**Make sure key exists */
-    const eventLogKeyExister = useSetRecoilState(eventLogKeyExisterState([key]))
-    eventLogKeyExister()
+    const eventLogKeyAdder = useSetAtom(eventLogKeyAdderAtom)
+    eventLogKeyAdder([key])
     //
     let sendFn = isPromiseOrAsyncFunc(keyOrSendFn)? keyOrSendFn 
         : isPromiseOrAsyncFunc(paramOrSendFn)? paramOrSendFn
@@ -314,9 +324,9 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
     let useNormalLog = !!sender && !sender.isLoading
     
 
-    /**Separate functions for setting atom w/n an atomFamily via a selectorFamily */
-    const logNormal = useSetRecoilState(eventLogPendingSendSelector(generateEventLogAtomKey(key, true)))
-    const logTemp = useSetRecoilState(eventLogPendingSendSelector(generateEventLogAtomKey(key, false)))
+    /**Separate functions for setting atom w/n an atomFamily */
+    const logNormal = useSetAtom(eventLogPendingAdderAtomFamily(generateEventLogAtomKey(key, true)))
+    const logTemp = useSetAtom(eventLogPendingAdderAtomFamily(generateEventLogAtomKey(key, false)))
     //
     /**When the event-log is sending, we store new events in a temporary array state */
     let logEvent = event => useNormalLog? logNormal(event) : logTemp(event)
@@ -354,20 +364,45 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
     //
 
     
-    const [eventsNormal, setEventsNormal] = useRecoilState(eventLogPendingSendState(generateEventLogAtomKey(key)))
-    const clearNormal = useResetRecoilState(eventLogPendingSendState(generateEventLogAtomKey(key)))
-    const eventsTemp = useRecoilValue(eventLogPendingSendState(generateEventLogAtomKey(key, false)))
-    const clearTemp = useResetRecoilState(eventLogPendingSendState(generateEventLogAtomKey(key, false)))
+    const [eventsNormal, setEventsNormal] = useAtom(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key)))
+    const eventsTemp = useAtomValue(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key, false)))
+    const clearNormal = () => setEventsNormal([])
+    const clearTemp = useSetAtom(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key, false)))
     
     /**The user may retrieve everything */
     let events = [...eventsNormal, ...eventsTemp]
     
     /**The user may clear everything */
-    let clear = () => (clearNormal() || clearTemp())
+    let clear = () => (clearNormal() || clearTemp([]))
 
     /* Sends & Clears the event log */
     const onSuccess = ({success}) => success && (setEventsNormal(eventsTemp) || clearTemp())
     /**DEV_REMINDER how does this function get called? */
+    /**
+     * Send Function Call Flow
+     * ----------------------
+     * The send function is called in three scenarios:
+     * 
+     * 1. Automatic Batch Send:
+     *    - When eventsNormal.length >= param.pendingSendMax
+     *    - Triggered by the check() function in useEffect
+     * 
+     * 2. Time-based Send:
+     *    - When timeInterval is set and time has elapsed
+     *    - Managed by setInterval in useEffect
+     * 
+     * 3. Manual Send:
+     *    - When user explicitly calls send()
+     *    - Can override normal logic with overrideLogic=true
+     * 
+     * Implementation Details:
+     * - Uses React Query's useMutation for server communication
+     * - Temporary storage (eventsTemp) holds new logs during sending
+     * - On successful send, temp logs are moved to normal storage
+     * 
+     * @param {boolean} overrideLogic - Force send regardless of conditions
+     * @returns {Promise|boolean} - Returns false if conditions not met, otherwise Promise
+     */
     const send = mainInstanceSends? 
         (overrideLogic = false) => 
             (overrideLogic || (param.activeSending && !sender.isLoading)) 
@@ -399,6 +434,32 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
     /**For an external link that breaks the webapp;
      * Send all logs that can be sent, before the webapp unloads
      */
+    /**
+     * Default configuration for external navigation links
+     * 
+     * TODO: ID Generation Enhancement
+     * Current Implementation:
+     * - ID field is empty string, needs unique identifier generation
+     * 
+     * Planned Enhancement:
+     * - Add UUID generation for unique link tracking
+     * - Schema: {
+     *     id: string,            // UUID v4 for unique identification
+     *     title: string,         // Link title for accessibility
+     *     className: string,     // CSS classes for styling
+     *     href: string,          // Target URL
+     *     rel: string,           // Link relationship
+     *     target: string,        // Target window/frame
+     *     text: string|null,     // Link text content
+     *     download: boolean      // Download attribute flag
+     * }
+     * 
+     * Implementation Steps:
+     * 1. Add UUID v4 generation utility function
+     * 2. Generate ID on link creation
+     * 3. Use ID for tracking link interactions
+     * 4. Add link click analytics integration
+     */
     const navigateOrLinkToDefaults = {
         id: '', //DEV_REMINDER something very random
         title: '',
@@ -410,6 +471,40 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
         download: false
     }
     //
+    /**
+     * Send all pending logs for specified keys
+     * 
+     * TODO: Complete sendAll Implementation
+     * Current Implementation:
+     * - Function stub with error message
+     * 
+     * Planned Enhancement:
+     * - Implement batch sending of logs across multiple keys
+     * - Support for selective key sending
+     * 
+     * Implementation Steps:
+     * 1. Gather logs from specified keys:
+     *    - If onlyTheseKeys is empty, use all available keys
+     *    - Filter logs by provided keys if specified
+     * 
+     * 2. Batch Processing:
+     *    - Group logs by key for efficient processing
+     *    - Handle temporary storage during sending
+     *    - Manage concurrent sends with Promise.all
+     * 
+     * 3. Error Handling:
+     *    - Implement retry logic for failed sends
+     *    - Track partial success/failure
+     *    - Maintain failed logs for retry
+     * 
+     * 4. Success Handling:
+     *    - Clear sent logs from storage
+     *    - Update UI with send status
+     *    - Trigger success callbacks
+     * 
+     * @param {string[]} onlyTheseKeys - Optional array of keys to limit sending
+     * @returns {Promise<Object>} Results of send operations by key
+     */
     const sendAll = (onlyTheseKeys = []) => {
         // DEV_REMINDER
         console.error('Function not complete yet // 2023-01-14')
@@ -417,7 +512,18 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
         // when finished, send to param
     }
     //
-    /**DEV_REMINDER: Write function's description here */
+    /**Navigate to a link after sending all logs.
+     * This function will send all logs, then open the link in a new tab.
+     * If the user does not provide a...
+     * link: it will use the defaults
+     * target: it will use the defaults
+     * onlyTheseKeys: it will use the defaults
+     * ...then it will send all logs for the provided keys
+     * and open the link in a new tab.
+     * @param {string} href - The link to navigate to
+     * @param {object} param - The parameters for the navigation
+     * @returns {Promise} A promise that resolves when the navigation is complete
+     */
     let navigateTo = (href, param = {}) => {
         param = {...navigateToDefaults, ...param}
         let runFunc = new Promise(resolve => {
@@ -461,52 +567,66 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
 export const useLogger = (key = undefined) => useLoggerSender(key)
 
 
-/* The functions (1) */
-//
-/**Log an event with any logKey. It performs heavier than useLogger does. */
-export function log(...args) {
-    return useLogger(args[0])(
-        args[1] || undefined,
-        args[2] || undefined,
-        args[3] || undefined
-    )
-}
-
-
 /**
  * Have instances of log batch senders which look over multiple Log key's
- * // DEV_REMINDER: Ability to set interval
- * @param {string} key - The key to use for this log batch sender
- * @param {function} sendFn - The function to send the log batch
- * @param {object} param - The parameters for this log batch sender
- * @returns {object} The log batch sender
+ * 
+ * TODO: Interval Setting Enhancement
+ * Current Implementation:
+ * - Basic interval checking through useEffect
+ * - Fixed interval timing
+ * 
+ * Planned Enhancement:
+ * - Dynamic interval configuration
+ * - Per-key interval settings
+ * - Adaptive interval based on log volume
+ * 
+ * Configuration Options:
+ * @typedef {Object} IntervalConfig
+ * @property {number} baseInterval - Base interval in milliseconds
+ * @property {number} minInterval - Minimum interval allowed
+ * @property {number} maxInterval - Maximum interval allowed
+ * @property {Object} keyIntervals - Per-key custom intervals
+ * @property {boolean} adaptiveMode - Enable/disable adaptive timing
+ * @property {Object} adaptiveConfig - Configuration for adaptive timing
+ * 
+ * Implementation Steps:
+ * 1. Add interval configuration to options object
+ * 2. Implement interval management system
+ * 3. Add per-key interval override capability
+ * 4. Develop adaptive interval algorithm
+ * 5. Add interval adjustment based on:
+ *    - Log volume
+ *    - Network conditions
+ *    - Server response times
+ * 
+ * @param {Object} options - Configuration options including interval settings
+ * @returns {Object} The log batch sender instance
  */
-export function useLogDriver(...args) {
-    const logDrive = useSetRecoilState(eventLogDriverSelector)
+export function useLogDriver(options = {}) {
+    const logDrive = useSetAtom(eventLogDriverAtom)
     //
-    const [eventLogsPaused, setEventLogsPaused] = useRecoilState(eventLogsPausedState)
-    const resetEventLogsPaused = useResetRecoilState(eventLogsPausedState)
+    const [eventLogsPaused, setEventLogsPaused] = useAtom(eventLogsPausedAtom)
+    const resetEventLogsPaused = () => setEventLogsPaused([])
     if (debug) console.info(packageName, 'eventLogsPaused', eventLogsPaused)
     //
-    const eventLogClearerReset = useSetRecoilState(eventLogClearerSelector)
+    const eventLogClearerReset = useSetAtom(eventLogClearerAtom)
     //
     /**All keys in the system */
-    const [logKeys, setLogKeys] = useRecoilState(eventLogsState)
+    const [logKeys, setLogKeys] = useAtom(eventLogsAtom)
     if (debug) console.info(packageName, 'logKeys', logKeys)
     //
     const reduceToExistingKeys = useReduceToExistingKeysSelector()
     //
     let keys = logKeys//logs.map(({key}) => key)
     //
-    const [allLogDriverKeys, setAllLogDriverKeys]  = useRecoilState(logDriversState)
+    const [allLogDriverKeys, setAllLogDriverKeys] = useAtom(logDriversAtom)
     if (debug) console.info(packageName, 'allLogDriverKeys', allLogDriverKeys)
     //
 
-    let driveTheseKeys = args[0] === undefined? (logKeys.length > 0? logKeys : [defaultKey])
-        : typeof args[0] === 'string'? [args[0]]
-        : Array.isArray(args[0])? args[0]
-        : args.find(arg => typeof arg === 'array' && Boolean(arg.filter(a => typeof a === 'string' && a.length > 0).length > 0))
-            .filter(key => typeof key === 'string' && key.length > 0)
+    let driveTheseKeys = !options.keys ? (logKeys.length > 0 ? logKeys : [defaultKey])
+        : typeof options.keys === 'string' ? [options.keys]
+        : Array.isArray(options.keys) ? options.keys
+        : [defaultKey]
     if (debug) console.info(packageName, 'driveTheseKeys', driveTheseKeys)
     
     /**Add any missing keys to all keys */
@@ -577,11 +697,48 @@ export function useLogDriver(...args) {
         else setEventLogsPaused(eventLogsPaused.reduce((all, pausedLog) => unpauseTheseKeys.includes(pausedLog)? all : [...all, pausedLog], []))
     }
 
-    /**DEV_REMINDER needs useLoggerSender() capabilities within this useLogDriver() function */
-    // const loggerSender = useLoggerSender(args[1] || null, {})
+    /**
+     * TODO: useLoggerSender Integration
+     * Current Implementation:
+     * - Basic comment noting need for useLoggerSender capabilities
+     * - No actual integration implemented
+     * 
+     * Planned Enhancement:
+     * - Full integration of useLoggerSender functionality within useLogDriver
+     * - Unified logging and sending interface
+     * 
+     * Integration Components:
+     * 1. Logging Capabilities:
+     *    - Direct log creation and management
+     *    - Batch logging support
+     *    - Log formatting and sanitization
+     * 
+     * 2. Sending Features:
+     *    - Automatic batch sending
+     *    - Manual send triggers
+     *    - Custom send intervals
+     * 
+     * 3. State Management:
+     *    - Log state tracking
+     *    - Send status monitoring
+     *    - Error handling
+     * 
+     * 4. Configuration:
+     *    - Merged options handling
+     *    - Per-instance settings
+     *    - Global defaults
+     * 
+     * Implementation Steps:
+     * 1. Extract core useLoggerSender functionality
+     * 2. Adapt for useLogDriver context
+     * 3. Implement state sharing
+     * 4. Add configuration merging
+     * 5. Test integrated functionality
+     */
+    // const loggerSender = useLoggerSender(options.sendFn || null, {})
 
     /**Object of all logs by key >> Array of each's events */
-    const logs = useRecoilValue(eventLogsGetter(driveTheseKeys))
+    const logs = useAtomValue(eventLogsGetterAtomFamily(driveTheseKeys))
     
     return {
         logs,
@@ -622,9 +779,9 @@ export const LogRiver = ({children, queryClient = null}) => {
         }
     })
 
-    return <RecoilRoot override={false}>
+    return <JotaiProvider>
         <QueryClientProvider client={queryClient}>
             {children}
         </QueryClientProvider>
-    </RecoilRoot>
+    </JotaiProvider>
 }

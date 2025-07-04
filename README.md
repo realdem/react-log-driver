@@ -6,7 +6,6 @@ This project provides a way to collect and send custom event logs from a React a
 
 ## Task list:
 - Finish everything commented with "DEV_REMINDER"
-- Update for React 19 by replacing recoil with jotai
 - Test everything out
 - Project board [seen here](https://github.com/users/realdem/projects/1)
 
@@ -39,7 +38,8 @@ The main component in this project is `<LogRiver>`. By wrapping your application
 1. `useLoggerSender()`:
     - A hook that provides a high level object of functionality to customize sending logs to your server.
     - Options:
-      - `userId`:
-        - (Optional) Specify a user identifier for each user in the log river...
-      - `enabled`:
-        - `true` by default. Log sending can be paused...
+      - `userId`: (Optional) Specify a user identifier for each user in the log river
+      - `enabled`: `true` by default. Log sending can be paused by setting to `false`
+      - `pendingSendMax`: Maximum number of logged objects before auto-sending (default: 5)
+      - `timeInterval`: Milliseconds between automatic sends (default: 15000)
+      - `sendFn`: Async function to handle sending logs to your server
