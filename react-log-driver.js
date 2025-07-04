@@ -321,7 +321,14 @@ const useReduceToExistingKeysSelector = () => {
      * 3. Update all log creation points to use new object structure
      * 4. Remove the .key || thisLog fallback after migration
      */
-    return (checkKeys = []) => [defaultKey, ...(Array.isArray(checkKeys)? checkKeys.map(sanitizeRawEvent) : [sanitizeRawEvent(checkKeys)])].reduce((existingKeys, thisKey) => logsState.map(thisLog => thisLog.key || thisLog).includes(thisKey)? [...existingKeys, thisKey] : existingKeys, [])
+    return (checkKeys = []) => [
+        defaultKey,
+        ...(
+            Array.isArray(checkKeys)
+            ? checkKeys.map(sanitizeRawEvent)
+            : [sanitizeRawEvent(checkKeys)]
+        )
+    ].filter(thisKey => logsState.map(thisLog => thisLog.key || thisLog).includes(thisKey))
 }
 //
 export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn = undefined, paramObject = undefined) {
@@ -689,13 +696,13 @@ export function useLogDriver(options = {}) {
     if (debug) console.info(packageName, 'driveTheseKeys', driveTheseKeys)
     
     /**Add any missing keys to all keys */
-    let missingLogKeys = driveTheseKeys.reduce((missing, key) => logKeys.includes(key)? missing : [...missing, key], [])
+    let missingLogKeys = driveTheseKeys.filter(key => !logKeys.includes(key))
     useEffect(() => {
         if (missingLogKeys.length > 0) setLogKeys(allLogKeys => [...allLogKeys, ...missingLogKeys])
     }, [missingLogKeys.join(',')])
 
     /**Add any missing keys to all log-driver keys */
-    let missingLogDriverKeys = driveTheseKeys.reduce((missing, key) => allLogDriverKeys.includes(key)? missing : [...missing, key], [])
+    let missingLogDriverKeys = driveTheseKeys.filter(key => !allLogDriverKeys.includes(key))
     useEffect(() => {
         if (missingLogDriverKeys.length > 0) setAllLogDriverKeys(allLogDriverKeys => [...allLogDriverKeys, ...missingLogDriverKeys])
     }, [missingLogDriverKeys.join(',')])
@@ -753,7 +760,7 @@ export function useLogDriver(options = {}) {
         /**If none provided, un-pause all event log keys */
         if (unpauseTheseKeys.length === 0) resetEventLogsPaused()
         /**Else remove only the specified keys from beign paused */
-        else setEventLogsPaused(eventLogsPaused.reduce((all, pausedLog) => unpauseTheseKeys.includes(pausedLog)? all : [...all, pausedLog], []))
+        else setEventLogsPaused(eventLogsPaused.filter(pausedLog => !unpauseTheseKeys.includes(pausedLog)))
     }
 
     /**
