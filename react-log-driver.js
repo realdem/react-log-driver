@@ -244,7 +244,7 @@ const eventLogPendingAdderAtomFamily = atomFamily((key = defaultKey) =>
     atom(
         (get) => get(eventLogPendingSendAtomFamily(key)),
         (get, set, eventProvided) => {
-            const current = get(eventLogPendingSendAtomFamily(key))
+            const current = get(eventLogPendingSendAtomFamily(key)) || []
             set(eventLogPendingSendAtomFamily(key), [
                 ...current,
                 addEventMetadata(sanitizeRawEvent(eventProvided))
@@ -286,8 +286,8 @@ const eventLogsGetterAtomFamily = atomFamily((logKeys = []) =>
         logKeys.reduce((all, key) => ({
             ...all,
             [key]: [
-                ...get(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key))),
-                ...get(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key, false)))
+                ...get(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key))) || [],
+                ...get(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key, false))) || []
             ]
         }), {})
     )
@@ -346,9 +346,10 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
     let key = sanitizeRawKey(typeof keyOrSendFn === 'string'? keyOrSendFn : `${param.key || ''}` || defaultKey)
     /**Make sure key exists */
     const eventLogKeyAdder = useSetAtom(eventLogKeyAdderAtom)
-    eventLogKeyAdder([key])
+    useEffect(() => eventLogKeyAdder([key]), [])
+
     //
-    let sendFn = isPromiseOrAsyncFunc(keyOrSendFn)? keyOrSendFn 
+    const sendFn = isPromiseOrAsyncFunc(keyOrSendFn)? keyOrSendFn 
         : isPromiseOrAsyncFunc(paramOrSendFn)? paramOrSendFn
         : !!paramProvided && ('sendFn' in paramProvided) && isPromiseOrAsyncFunc(paramProvided.sendFn)? paramProvided.sendFn
         : undefined
@@ -361,7 +362,6 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
         code: 'SENDFN_NOT_A_PROMISE',
         msg: 'A sendFn was defined to useLoggerSender() but it is not asynchronous '
     })
-
 
     /**Determine if this is the main instance hook that is called within the app */
     const mainInstance = (
@@ -390,7 +390,8 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
     /**Either logs the event immediately or returns a function to call that will log the event & simultaneously run a provided function
      * The returned function can essentially act as a cloned event, where you may pass additional maybe-unique 'info' to any of those clones.
     */
-    let log = (event = null, fnOrReturnFn = undefined, returnFn = false) => {
+    const log = (event = null, fnOrReturnFn = undefined, returnAsFunction = false) => {
+        if (debug) console.count('useLoggerSender.log')
         let runFn = typeof fnOrReturnFn === 'function'? fnOrReturnFn : false
         let run = (moreEventInfo = undefined) => {
             logEvent({
@@ -401,9 +402,10 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
             })
             if (!!runFn) runFn()
         }
-        return ['boolean', 'null', 'number', 'string'].includes(typeof fnOrReturnFn) && Boolean(fnOrReturnFn)
-        || ['boolean', 'null', 'number', 'string'].includes(typeof returnFn) && Boolean(returnFn)
-        ? run : run()
+        return (
+            (['boolean', 'null', 'number', 'string'].includes(typeof fnOrReturnFn) && Boolean(fnOrReturnFn))
+            || (['boolean', 'null', 'number', 'string'].includes(typeof returnAsFunction) && Boolean(returnAsFunction))
+        )? run : run()
     }
 
 
@@ -426,13 +428,20 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
     const clearTemp = useSetAtom(eventLogPendingSendAtomFamily(generateEventLogAtomKey(key, false)))
     
     /**The user may retrieve everything */
-    let events = [...eventsNormal, ...eventsTemp]
+    let events = [...eventsNormal || [], ...eventsTemp || []]
     
     /**The user may clear everything */
-    let clear = () => (clearNormal() || clearTemp([]))
+    let clear = () => {
+        if (debug) console.count('useLoggerSender.clear')
+        clearNormal()
+        clearTemp([])
+    }
 
-    /* Sends & Clears the event log */
-    const onSuccess = ({success}) => success && (setEventsNormal(eventsTemp) || clearTemp())
+    /* After sending, clears the event log */
+    const onSuccess = () => {
+        setEventsNormal(eventsTemp)
+        clearTemp()
+    }
     /**DEV_REMINDER how does this function get called? */
     /**
      * Send Function Call Flow
@@ -460,25 +469,34 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
      * @returns {Promise|boolean} - Returns false if conditions not met, otherwise Promise
      */
     const send = mainInstanceSends? 
-        (overrideLogic = false) => 
-            (overrideLogic || (param.activeSending && !sender.isLoading)) 
-            && sender.mutate(param.prepFn(eventsNormal), {onSuccess})
-        : (useSendFn = null, prepFn = null) => 
-            !isPromiseOrAsyncFunc(useSendFn)? false 
-            : sender.mutate(typeof prepFn === 'function'? prepFn(eventsNormal) : param.prepFn(eventsNormal), {
-                mutationFn: useSendFn,
-                onSuccess
-            })
+        (overrideLogic = false) => {
+            if (debug) console.count('Running useLoggerSender.send')
+            if ((param.activeSending && !sender.isLoading) || overrideLogic) {
+                if (debug) console.info(packageName, 'send()', {eventsNormal, eventsTemp})
+                sender.mutate(param.prepFn(eventsNormal), {onSuccess})
+            } else console.error(packageName, 'send() failed')
+        }
+        : (useSendFn = null, prepFn = null) => {
+            if (debug) console.count('Running useLoggerSender.send')
+            if (isPromiseOrAsyncFunc(useSendFn) || sendFn) {
+                if (debug) console.info(packageName, 'send()', {eventsNormal, eventsTemp})
+                sender.mutate(typeof prepFn === 'function'? prepFn(eventsNormal) : param.prepFn(eventsNormal), {
+                    mutationFn: useSendFn || sendFn,
+                    onSuccess
+                })
+            } else console.error(packageName, 'send() failed')
+        }
 
     
     /**Check & Send */
     function check() {
+        if (debug) console.count('useLoggerSender.check')
         if (mainInstanceSends)
             if (!Boolean(param.timeIntervalSeconds)) {
-                if (eventsNormal.length >= param.pendingSendMax) send(false)
+                if ((eventsNormal || []).length >= param.pendingSendMax) send()
             }// else if (eventsNormal.length > 0 && timeRemaining < 0) send(true)
     }
-    if (mainInstanceSends) useEffect(check, [`${eventsNormal.length}:${events[eventsNormal.length-1]?.time}`])
+    if (mainInstanceSends) useEffect(check, [`${(eventsNormal || []).length}:${events[(eventsNormal || []).length-1]?.time}`])
     //
     /**Check every so often? */
     const [intervalId, setIntervalId] = useState(null)
@@ -704,11 +722,12 @@ export function useLogDriver(options = {}) {
     /**Add any missing keys to all log-driver keys */
     let missingLogDriverKeys = driveTheseKeys.filter(key => !allLogDriverKeys.includes(key))
     useEffect(() => {
-        if (missingLogDriverKeys.length > 0) setAllLogDriverKeys(allLogDriverKeys => [...allLogDriverKeys, ...missingLogDriverKeys])
+        if (missingLogDriverKeys.length > 0) setAllLogDriverKeys(allLogDriverKeys => [...new Set([...allLogDriverKeys, ...missingLogDriverKeys])])
     }, [missingLogDriverKeys.join(',')])
 
     /**Control all collected events over all keys */
     let clear = (clearTheseLogs = []) => {
+        if (debug) console.count('useLogDriver.clear')
         /**Delete all event logs for all keys */
         if (clearTheseLogs.length > 0) clearTheseLogs.forEach(eventLogClearerReset)
         /**Else only clear */
@@ -722,22 +741,24 @@ export function useLogDriver(options = {}) {
     let jam = (
         deactivate = allLogDriverKeys,
         prevent = ['logging', 'sending']
-    ) => logDrive({
-        type: 'jam', 
-        keys: typeof deactivate === 'boolean'? !deactivate? [] : allLogDriverKeys.length > 0? allLogDriverKeys : logKeys
-            : Array.isArray(deactivate)? reduceToExistingKeys(deactivate.map(sanitizeRawKey))
-            : reduceToExistingKeys([sanitizeRawKey(deactivate)]),
-        prevent
-    })
+    ) => {
+        if (debug) console.count('useLogDriver.jam')
+        logDrive({
+            type: 'jam', 
+            keys: typeof deactivate === 'boolean'? !deactivate? [] : allLogDriverKeys.length > 0? allLogDriverKeys : logKeys
+                : Array.isArray(deactivate)? reduceToExistingKeys(deactivate.map(sanitizeRawKey))
+                : reduceToExistingKeys([sanitizeRawKey(deactivate)]),
+            prevent
+        })
+    }
 
-    /**Sending
-     * DEV_REMINDER
-     */
+    /* Sending */
     const sendFn = null
-    const sendAll = () => {}
+    const sendAll = Function()
     
     /**If the user "logs out" and all events should be deactivated and cleared*/
     let logout = (unloadAll = false) => {
+        if (debug) console.count('useLogDriver.logout')
         if (unloadAll) {
             /**Send all logs  */
             if (sendFn) sendAll()
@@ -751,6 +772,7 @@ export function useLogDriver(options = {}) {
     /**Tell the driver the log uploading or logging can continue
      */
     let drive = (unpauseTheseKeys = []) => {
+        if (debug) console.count('useLogDriver.drive')
         /**First, clean up the parameter */
         unpauseTheseKeys = sanitizeRawKey(unpauseTheseKeys)
         //
