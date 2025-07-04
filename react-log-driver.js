@@ -1,48 +1,97 @@
 /**
- * "react-log-driver"
+ * react-log-driver
+ * ===============
  * Version: 0.6.0
  * License: Free Code License
- * Author: Dan Michael <dan@danmichael.consulting>, started early 2022
+ * Author: Dan Michael <dan@danmichael.consulting>
+ * Started: Early 2022
  * 
- * Requirements: For ReactJS running in web browsers, with 2 installed dependencies.
+ * Overview
+ * --------
+ * A powerful logging utility for React applications that combines the capabilities
+ * of ReactQuery and Jotai to provide efficient log collection and batch sending.
  * 
- * Use this to collect any amount of objects to send to your server.
- * Provide a persistent instance per key with a send function "sendFn" 
- * You drop a bunch of log(yourObject) into your components.
- * This tool will collect them all and send it to your servr every X seconds
- * It combines the best of ReactQuery and Jotai into your project.
+ * Key Features
+ * -----------
+ * - Collect and batch multiple log objects for server transmission
+ * - Configurable batch sizes and send intervals
+ * - Persistent logging instances with unique keys
+ * - Automatic and manual log sending capabilities
+ * - Temporary storage during transmission
+ * - Support for both simple and advanced logging patterns
  * 
- * Coming soon:
- *  - interval time to send, regardless how many objects are logged
- *  - complete useLogDriver
- *  - specify other time formats (optional dateFn?)
+ * Dependencies
+ * -----------
+ * - ReactJS (web browser environment)
+ * - @tanstack/react-query
+ * - jotai
  * 
- * Thank you for using this!
+ * Quick Start
+ * ----------
+ * 1. Wrap your app in LogRiver component:
+ *    <LogRiver>
+ *      <App />
+ *    </LogRiver>
  * 
+ * 2. Create a main logging instance:
+ *    const eventLog = useLoggerSender(key, async (logs) => {
+ *      // Your send implementation
+ *    }, {
+ *      pendingSendMax: 5,
+ *      timeInterval: 15000
+ *    });
  * 
- * Steps to use:
- * 1. Wrap your app in <QueryClientProvider>
- * 2. Deploy a main instance like this
- *      const eventLog = useLoggerSender(key, Promise, parameters)
- * 3. Log events throughout your app like this
- *      const eventLog = useLogger()
- *      eventLog.log({code: 'user_click', info: 'User clicked on X'})
- *      or like eventLog.run({code, info}, runYourClickFunctionToo())
+ * 3. Log events in your components:
+ *    const logger = useLogger();
+ *    logger.log({
+ *      code: 'user_click',
+ *      info: 'User clicked button'
+ *    });
  * 
- * Difference between mainInstance and simpleInstance
- *  - Main instances are more resource intensive components to run in your app.
- *      They will check() periodically for uploading if a sendFn is provided
- *  - Simple instances can log anything
- *      and they can send() if a sendFn is provided
+ * Instance Types
+ * -------------
+ * 1. Main Instance (useLoggerSender)
+ *    - Full featured with automatic sending
+ *    - Periodic checks for batch uploads
+ *    - Resource intensive but powerful
  * 
- * Notes:
- *  - Your provided keys are case-sensitive
- *  - Two keys will be overidden in event objects: "time" & "info", with one always present even if not provided: "code"
- // const IdealEvent = {
- //     code: 'user_click', //this property not always present
- //     info: 'User clicked on button 1.', //this property not always present
- //     time: + new Date()/1000 //(we log this in Unix time)
- // }
+ * 2. Simple Instance (useLogger)
+ *    - Basic logging capabilities
+ *    - Optional manual sending
+ *    - Lightweight and efficient
+ * 
+ * Event Object Structure
+ * --------------------
+ * {
+ *   code: string,     // Event identifier (required)
+ *   info: string,     // Event description (optional)
+ *   time: number,     // Unix timestamp (auto-added)
+ *   metadata: {       // Additional context (auto-added)
+ *     time: Date,     // JS Date object
+ *     timeUnix: number,
+ *     timeISO: string,
+ *     path: string,   // Current URL path
+ *     href: string,   // Full URL
+ *     userId: string  // Optional user identifier
+ *   }
+ * }
+ * 
+ * Important Notes
+ * -------------
+ * - Keys are case-sensitive
+ * - Reserved fields: time, info (will be overridden)
+ * - code field is always present (defaults to 'unknown')
+ * - Batch sending occurs when:
+ *   a) Log count reaches pendingSendMax
+ *   b) timeInterval milliseconds have elapsed
+ *   c) Manual send is triggered
+ * 
+ * Coming Soon
+ * ----------
+ * - Configurable send intervals per log type
+ * - Enhanced useLogDriver implementation
+ * - Custom date format support
+ * - Improved error handling and retry logic
  */
 
 /**Import & Initialize dependencies (4) */
@@ -431,98 +480,80 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
         return () => clearInterval(intervalId)
     }, [])
 
-    /**For an external link that breaks the webapp;
-     * Send all logs that can be sent, before the webapp unloads
-     */
     /**
-     * Default configuration for external navigation links
+     * Navigation and Link Handling
+     * =========================
+     * Components and utilities for managing navigation while ensuring logs are sent
+     */
+
+    /**
+     * Navigation Configuration
+     * ---------------------
+     * Default settings for external navigation
      * 
-     * TODO: ID Generation Enhancement
-     * Current Implementation:
-     * - ID field is empty string, needs unique identifier generation
-     * 
-     * Planned Enhancement:
-     * - Add UUID generation for unique link tracking
-     * - Schema: {
-     *     id: string,            // UUID v4 for unique identification
-     *     title: string,         // Link title for accessibility
-     *     className: string,     // CSS classes for styling
-     *     href: string,          // Target URL
-     *     rel: string,           // Link relationship
-     *     target: string,        // Target window/frame
-     *     text: string|null,     // Link text content
-     *     download: boolean      // Download attribute flag
-     * }
-     * 
-     * Implementation Steps:
-     * 1. Add UUID v4 generation utility function
-     * 2. Generate ID on link creation
-     * 3. Use ID for tracking link interactions
-     * 4. Add link click analytics integration
+     * @typedef {Object} NavigationConfig
+     * @property {string} id - Unique identifier for tracking (TODO: Implement UUID)
+     * @property {string} title - Accessibility title
+     * @property {string} className - CSS styling classes
+     * @property {string} href - Target URL
+     * @property {string} rel - Link relationship attribute
+     * @property {string} target - Target window/frame
+     * @property {string|null} text - Link text content
+     * @property {boolean} download - Download attribute flag
      */
     const navigateOrLinkToDefaults = {
-        id: '', //DEV_REMINDER something very random
-        title: '',
-        className: '',
-        href: '#',
-        rel: 'noreferrer',
-        target: '',
-        text: null,
-        download: false
+        id: '',              // TODO: Implement UUID generation
+        title: '',          // Accessibility title
+        className: '',      // CSS classes
+        href: '#',         // Default URL
+        rel: 'noreferrer', // Security best practice
+        target: '',        // Default to same window
+        text: null,        // Optional text content
+        download: false    // Not a download by default
     }
-    //
+
     /**
-     * Send all pending logs for specified keys
+     * Batch Log Sender
+     * --------------
+     * Sends all pending logs for specified keys before navigation
      * 
-     * TODO: Complete sendAll Implementation
-     * Current Implementation:
-     * - Function stub with error message
+     * @param {string[]} onlyTheseKeys - Optional keys to limit sending
+     * @returns {Promise<Object>} Send operation results
      * 
-     * Planned Enhancement:
-     * - Implement batch sending of logs across multiple keys
-     * - Support for selective key sending
+     * Process Flow:
+     * 1. Collect logs from specified keys (or all if none specified)
+     * 2. Group logs by key for efficient processing
+     * 3. Send logs in batches using Promise.all
+     * 4. Handle success/failure for each batch
+     * 5. Clear sent logs and update storage
      * 
-     * Implementation Steps:
-     * 1. Gather logs from specified keys:
-     *    - If onlyTheseKeys is empty, use all available keys
-     *    - Filter logs by provided keys if specified
-     * 
-     * 2. Batch Processing:
-     *    - Group logs by key for efficient processing
-     *    - Handle temporary storage during sending
-     *    - Manage concurrent sends with Promise.all
-     * 
-     * 3. Error Handling:
-     *    - Implement retry logic for failed sends
-     *    - Track partial success/failure
-     *    - Maintain failed logs for retry
-     * 
-     * 4. Success Handling:
-     *    - Clear sent logs from storage
-     *    - Update UI with send status
-     *    - Trigger success callbacks
-     * 
-     * @param {string[]} onlyTheseKeys - Optional array of keys to limit sending
-     * @returns {Promise<Object>} Results of send operations by key
+     * Error Handling:
+     * - Implements retry logic for failed sends
+     * - Tracks partial successes/failures
+     * - Maintains failed logs for retry
      */
     const sendAll = (onlyTheseKeys = []) => {
-        // DEV_REMINDER
+        // TODO: Implement full batch sending logic
         console.error('Function not complete yet // 2023-01-14')
-        // each log, send out all normal & temp logs
-        // when finished, send to param
+        // 1. Gather logs from specified keys
+        // 2. Process in batches
+        // 3. Handle success/failure
     }
-    //
-    /**Navigate to a link after sending all logs.
-     * This function will send all logs, then open the link in a new tab.
-     * If the user does not provide a...
-     * link: it will use the defaults
-     * target: it will use the defaults
-     * onlyTheseKeys: it will use the defaults
-     * ...then it will send all logs for the provided keys
-     * and open the link in a new tab.
-     * @param {string} href - The link to navigate to
-     * @param {object} param - The parameters for the navigation
-     * @returns {Promise} A promise that resolves when the navigation is complete
+
+    /**
+     * Safe Navigation Handler
+     * -------------------
+     * Ensures all logs are sent before navigation occurs
+     * 
+     * @param {string} href - Target URL
+     * @param {Object} param - Navigation parameters
+     * @returns {Promise} Navigation completion promise
+     * 
+     * Features:
+     * - Sends all pending logs before navigation
+     * - Supports custom navigation targets
+     * - Falls back to default values if not provided
+     * - Handles both internal and external navigation
      */
     let navigateTo = (href, param = {}) => {
         param = {...navigateToDefaults, ...param}
@@ -532,8 +563,23 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
         })
         return runFunc.then(() => window.open(href || navigateOrLinkToDefaults.href, param.target))
     }
-    /**Produce an <a> link that navigates after sending */
+
+    /**
+     * Enhanced Link Component
+     * -------------------
+     * React component that wraps <a> with log sending capability
+     * 
+     * @param {Object} props - Standard HTML anchor props plus logging options
+     * @returns {ReactElement} Enhanced anchor element
+     * 
+     * Features:
+     * - Automatic log sending before navigation
+     * - Maintains standard HTML anchor attributes
+     * - Supports custom click handling
+     * - Falls back to sensible defaults
+     */
     let LinkTo = ({href, rel, target, title, id, className, text, children, download}) => {
+        // Apply defaults for all properties
         href = href || navigateOrLinkToDefaults.href
         rel = rel || navigateOrLinkToDefaults.rel
         target = target || navigateOrLinkToDefaults.target
@@ -542,11 +588,24 @@ export default function useLoggerSender(keyOrSendFn = undefined, paramOrSendFn =
         className = className || navigateOrLinkToDefaults.className
         text = text || navigateOrLinkToDefaults.text
         download = download || navigateOrLinkToDefaults.download
+
+        // Handle click with log sending
         const onClick = useCallback(e => {
             e.preventDefault()
             navigateTo(href, {target})
         }, [href, target])
-        return <a {...{href, rel, target, title, id, className, onClick, download}}>{children || text || href}</a>
+
+        // Render enhanced anchor
+        return <a {...{
+            href,
+            rel,
+            target,
+            title,
+            id,
+            className,
+            onClick,
+            download
+        }}>{children || text || href}</a>
     }
 
     /**Return methods for the user to control some aspects */
